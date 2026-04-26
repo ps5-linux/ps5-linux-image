@@ -1,1 +1,1 @@
-root=LABEL=__DISTRO__ rw rootwait console=ttyTitania0 console=tty0 video=DP-1:1920x1080@60 mitigations=off idle=halt rootfstype=ext4
+root=LABEL=__DISTRO__ rootfstype=ext4 rw rootwait console=ttyTitania0 console=tty0 video=DP-1:1920x1080@60 mitigations=off idle=halt preempt=full

@@ -122,9 +122,6 @@ boot/
   cmdline.txt                   # Kernel cmdline template (__DISTRO__ placeholder)
   vram.txt                      # VRAM allocation
   kexec-{ubuntu,ubuntu2604,arch,alpine}.sh
-patches/
-  linux.patch                   # PS5 kernel patches
-  config                        # Kernel .config
 work/                           # Build artifacts (auto-created)
 linux-bin/                      # Compiled kernel packages
 output/                         # Final .img files
