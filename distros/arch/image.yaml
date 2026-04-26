@@ -1,0 +1,189 @@
+image:
+  name: ps5-arch
+  distribution: archlinux
+  description: Arch Linux with Sway desktop
+  architecture: x86_64
+
+source:
+  downloader: archlinux-http
+  url: https://geo.mirror.pkgbuild.com/iso
+  skip_verification: true
+
+packages:
+  manager: pacman
+  update: true
+  cleanup: true
+
+  repositories:
+  - name: mirrorlist
+    url: |-
+      Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+
+  sets:
+  - packages:
+    # Sway / Wayland desktop
+    - sway
+    - swaylock
+    - swayidle
+    - swaybg
+    - foot
+    - wofi
+    - waybar
+    - mako
+    - grim
+    - slurp
+    - wl-clipboard
+    - xorg-xwayland
+
+    # Audio / media
+    - pipewire
+    - wireplumber
+    - pipewire-pulse
+
+    # Display / GPU (AMD)
+    - mesa
+    - vulkan-radeon
+    - libva-mesa-driver
+    - xf86-video-amdgpu
+    - libinput
+    - xkeyboard-config
+
+    # File manager / apps
+    - thunar
+    - firefox
+
+    # Networking
+    - networkmanager
+    - linux-firmware
+
+    # System
+    - base
+    - openssh
+    - sudo
+    - nano
+    - bash
+    - mkinitcpio
+    - kmod
+    - e2fsprogs
+    - parted
+    - polkit
+    - dbus
+    - seatd
+    - kexec-tools
+
+    # Fonts
+    - ttf-dejavu
+    - ttf-liberation
+    - noto-fonts
+    - ttf-font-awesome
+    - fontconfig
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+- path: /opt/pkgs/
+  generator: copy
+  source: /tmp/build-staging/pkgs
+
+- path: /usr/local/sbin/first-boot-setup
+  generator: copy
+  source: /tmp/build-staging/first-boot-setup
+  mode: "0755"
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    # Initialise pacman keyring
+    pacman-key --init
+    pacman-key --populate archlinux
+
+    # Fetch up-to-date HTTPS mirrors ranked by score, force-refresh package DBs
+    curl -fsSL "https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on" \
+        | sed 's/^#Server/Server/' > /etc/pacman.d/mirrorlist
+    pacman -Syy --noconfirm
+
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    fc-cache -f -v
+
+    # SSH
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl enable sshd
+    systemctl enable NetworkManager
+    systemctl enable seatd
+    systemctl enable pipewire pipewire-pulse wireplumber || true
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    systemctl enable grow-rootfs.service
+
+    # Create default user (ps5/ps5)
+    useradd -m -G wheel,seat -s /bin/bash ps5
+    echo "ps5:ps5" | chpasswd
+    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+    # Sway config + auto-start on tty1 login
+    mkdir -p /home/ps5/.config/sway
+    cp /etc/sway/config /home/ps5/.config/sway/config
+    {
+        echo 'if [ "$(tty)" = "/dev/tty1" ] && [ -z "$WAYLAND_DISPLAY" ]; then'
+        echo '    export XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"'
+        echo '    mkdir -p "$XDG_RUNTIME_DIR"'
+        echo '    chmod 700 "$XDG_RUNTIME_DIR"'
+        echo '    exec sway'
+        echo 'fi'
+    } >> /home/ps5/.bash_profile
+    chown -R ps5:ps5 /home/ps5
+
+    # Ensure vconsole.conf exists (needed by mkinitcpio sd-vconsole hook)
+    [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
+
+    # Drop autodetect — it detects the build host's hardware, not the target.
+    # This produces a larger but hardware-independent initramfs.
+    sed -i 's/ autodetect//' /etc/mkinitcpio.conf
+
+    # Install custom kernel packages
+    if ls /opt/pkgs/*.pkg.tar.zst 1>/dev/null 2>&1; then
+        pacman -U --noconfirm /opt/pkgs/*.pkg.tar.zst
+        rm -rf /opt/pkgs
+        KVER=$(ls -1t /lib/modules | head -1)
+        # mkinitcpio may warn about missing optional modules; don't fail on those
+        mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
+    fi
+
+    mkdir -p /boot/efi
+    /etc/kernel/postinst.d/zz-update-boot
+
+mappings:
+  architecture_map: archlinux

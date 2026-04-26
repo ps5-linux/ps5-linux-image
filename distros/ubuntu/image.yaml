@@ -1,0 +1,148 @@
+image:
+  name: ps5-ubuntu
+  distribution: ubuntu
+  release: noble
+  description: Ubuntu Noble desktop
+  architecture: x86_64
+
+source:
+  downloader: debootstrap
+  url: http://archive.ubuntu.com/ubuntu
+  variant: minbase
+  keyserver: keyserver.ubuntu.com
+  keys:
+  - 0x790BC7277767219C42C86F933B4FE6ACC0B21F32
+  - 0xf6ecb3762474eda9d21b7022871920d1991bc93c
+
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+
+  repositories:
+  - name: sources.list
+    url: |-
+      deb http://archive.ubuntu.com/ubuntu {{ image.release }} main restricted universe multiverse
+      deb http://archive.ubuntu.com/ubuntu {{ image.release }}-updates main restricted universe multiverse
+      deb http://security.ubuntu.com/ubuntu {{ image.release }}-security main restricted universe multiverse
+    architectures:
+    - amd64
+
+  sets:
+  - packages:
+    - ubuntu-desktop
+    - firefox
+    - openssh-server
+    - build-essential
+    - network-manager
+    - linux-firmware
+    - initramfs-tools
+    - kmod
+    - sudo
+    - nano
+    - cloud-guest-utils
+    - kexec-tools
+    - fonts-ubuntu
+    - fonts-liberation
+    - fonts-dejavu
+    - fontconfig
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/machine-id
+  generator: dump
+
+- path: /etc/NetworkManager/conf.d/dns.conf
+  generator: copy
+  source: /tmp/build-staging/nm-dns.conf
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+- path: /opt/debs/
+  generator: copy
+  source: /tmp/build-staging/debs
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    # Clear stale apt lists to avoid InRelease split errors after debootstrap
+    rm -f /var/lib/apt/lists/*InRelease /var/lib/apt/lists/*Release /var/lib/apt/lists/*Packages* || true
+    # Retry up to 10 times on transient 429/network errors
+    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry
+    # Install gnupg + dirmngr so we can fetch the Mozilla PPA key
+    apt-get update
+    apt-get install -y gnupg dirmngr curl
+
+    # Import Mozilla PPA signing key and add repository
+    mkdir -p /root/.gnupg /etc/apt/keyrings
+    chmod 700 /root/.gnupg
+    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x0AB215679C571D1C8325275B9BDB3D89CE49EC21" | \
+        gpg --no-default-keyring --keyring gnupg-ring:/etc/apt/keyrings/mozillateam.gpg --import
+    chmod 644 /etc/apt/keyrings/mozillateam.gpg
+
+    echo "deb [signed-by=/etc/apt/keyrings/mozillateam.gpg] http://ppa.launchpad.net/mozillateam/ppa/ubuntu noble main" \
+        > /etc/apt/sources.list.d/mozilla-ppa.list
+
+    # Pin PPA firefox over snap transitional package
+    cat > /etc/apt/preferences.d/mozilla-ppa << 'PINEOF'
+    Package: firefox*
+    Pin: release o=LP-PPA-mozillateam
+    Pin-Priority: 1001
+    PINEOF
+
+- trigger: post-update
+  action: |-
+    #!/bin/bash
+    set -eux
+    passwd -l root
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    fc-cache -f -v
+
+    # SSH — password auth only, root login via sudo
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl enable ssh
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    systemctl enable grow-rootfs.service
+    systemctl enable systemd-resolved
+    mkdir -p /boot/efi
+    dpkg -i /opt/debs/*.deb
+    rm -rf /opt/debs
+    KVER=$(ls -1t /lib/modules | head -1)
+    update-initramfs -c -k "$KVER"
+    /etc/kernel/postinst.d/zz-update-boot "$KVER"
+
+mappings:
+  architecture_map: debian

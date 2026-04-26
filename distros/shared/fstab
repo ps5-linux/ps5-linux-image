@@ -1,0 +1,2 @@
+LABEL=__DISTRO__    /          ext4  rw,relatime  0 1
+LABEL=boot          /boot/efi  vfat  rw,relatime  0 2

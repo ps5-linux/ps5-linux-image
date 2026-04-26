@@ -1,0 +1,20 @@
+#!/bin/bash
+# Multi-distro boot hook: copies kernel + initrd to the EFI partition
+# using distro-specific names. Reads /etc/ps5-distro for current distro.
+set -e
+BOOT_PART="/boot/efi"
+KVER="$1"
+[ -z "$KVER" ] && KVER="$(ls -1t /lib/modules | head -1)"
+
+DISTRO="unknown"
+[ -f /etc/ps5-distro ] && DISTRO="$(cat /etc/ps5-distro)"
+
+cp "/boot/vmlinuz-$KVER"    "$BOOT_PART/bzImage"
+cp "/boot/initrd.img-$KVER" "$BOOT_PART/initrd-${DISTRO}.img"
+
+# Ubuntu is default boot — also update the generic initrd.img
+if [ "$DISTRO" = "ubuntu" ]; then
+    cp "/boot/initrd.img-$KVER" "$BOOT_PART/initrd.img"
+fi
+
+echo ">> Kernel $KVER deployed to $BOOT_PART (distro=$DISTRO)"

@@ -1,0 +1,2935 @@
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index 80527299f859..76dc3a9963f3 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -592,6 +592,14 @@ config X86_NUMACHIP
+ 	  enable more than ~168 cores.
+ 	  If you don't have one of these, you should say N here.
+ 
++config X86_PS5
++	bool "Sony PlayStation 5"
++	depends on X86_64
++	depends on X86_EXTENDED_PLATFORM
++	depends on PCI
++	help
++	  Select to include support for the Sony PlayStation 5 game console.
++
+ config X86_VSMP
+ 	bool "ScaleMP vSMP"
+ 	select HYPERVISOR_GUEST
+diff --git a/arch/x86/include/asm/msr-index.h b/arch/x86/include/asm/msr-index.h
+index d1b11b4c40d2..b88d64054f50 100644
+--- a/arch/x86/include/asm/msr-index.h
++++ b/arch/x86/include/asm/msr-index.h
+@@ -26,6 +26,7 @@
+ #define _EFER_LMSLE		13 /* Long Mode Segment Limit Enable */
+ #define _EFER_FFXSR		14 /* Enable Fast FXSAVE/FXRSTOR */
+ #define _EFER_TCE		15 /* Enable Translation Cache Extensions */
++#define _EFER_NDA		16 /* No data access enable */
+ #define _EFER_AUTOIBRS		21 /* Enable Automatic IBRS */
+ 
+ #define EFER_SCE		(1<<_EFER_SCE)
+@@ -36,6 +37,7 @@
+ #define EFER_LMSLE		(1<<_EFER_LMSLE)
+ #define EFER_FFXSR		(1<<_EFER_FFXSR)
+ #define EFER_TCE		(1<<_EFER_TCE)
++#define EFER_NDA		(1<<_EFER_NDA)
+ #define EFER_AUTOIBRS		(1<<_EFER_AUTOIBRS)
+ 
+ /*
+diff --git a/arch/x86/include/asm/pgtable_types.h b/arch/x86/include/asm/pgtable_types.h
+index 2ec250ba467e..f4654b2e63d0 100644
+--- a/arch/x86/include/asm/pgtable_types.h
++++ b/arch/x86/include/asm/pgtable_types.h
+@@ -21,8 +21,9 @@
+ #define _PAGE_BIT_SOFTW2	10	/* " */
+ #define _PAGE_BIT_SOFTW3	11	/* " */
+ #define _PAGE_BIT_PAT_LARGE	12	/* On 2MB or 1GB pages */
+-#define _PAGE_BIT_SOFTW4	57	/* available for programmer */
+-#define _PAGE_BIT_SOFTW5	58	/* available for programmer */
++#define _PAGE_BIT_SOFTW4	56	/* available for programmer */
++#define _PAGE_BIT_SOFTW5	57	/* available for programmer */
++#define _PAGE_BIT_NDA		58	/* No data access */
+ #define _PAGE_BIT_PKEY_BIT0	59	/* Protection Keys, bit 1/4 */
+ #define _PAGE_BIT_PKEY_BIT1	60	/* Protection Keys, bit 2/4 */
+ #define _PAGE_BIT_PKEY_BIT2	61	/* Protection Keys, bit 3/4 */
+@@ -65,6 +66,7 @@
+ #define _PAGE_SPECIAL	(_AT(pteval_t, 1) << _PAGE_BIT_SPECIAL)
+ #define _PAGE_CPA_TEST	(_AT(pteval_t, 1) << _PAGE_BIT_CPA_TEST)
+ #define _PAGE_KERNEL_4K	(_AT(pteval_t, 1) << _PAGE_BIT_KERNEL_4K)
++#define _PAGE_NDA	(_AT(pteval_t, 1) << _PAGE_BIT_NDA)
+ #ifdef CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS
+ #define _PAGE_PKEY_BIT0	(_AT(pteval_t, 1) << _PAGE_BIT_PKEY_BIT0)
+ #define _PAGE_PKEY_BIT1	(_AT(pteval_t, 1) << _PAGE_BIT_PKEY_BIT1)
+@@ -192,6 +194,7 @@ enum page_cache_mode {
+ #define ___D _PAGE_DIRTY
+ #define ___G _PAGE_GLOBAL
+ #define __NX _PAGE_NX
++#define _NDA _PAGE_NDA
+ 
+ #define _ENC _PAGE_ENC
+ #define __WP _PAGE_CACHE_WP
+@@ -210,6 +213,7 @@ enum page_cache_mode {
+ #define PAGE_COPY	     __pg(__PP|   0|_USR|___A|__NX|   0|   0|   0)
+ #define PAGE_READONLY	     __pg(__PP|   0|_USR|___A|__NX|   0|   0|   0)
+ #define PAGE_READONLY_EXEC   __pg(__PP|   0|_USR|___A|   0|   0|   0|   0)
++#define PAGE_EXECONLY	     __pg(__PP|   0|_USR|___A|_NDA|   0|   0|   0)
+ 
+ /*
+  * Page tables needs to have Write=1 in order for any lower PTEs to be
+diff --git a/arch/x86/include/asm/setup.h b/arch/x86/include/asm/setup.h
+index 914eb32581c7..1199b0762d60 100644
+--- a/arch/x86/include/asm/setup.h
++++ b/arch/x86/include/asm/setup.h
+@@ -69,6 +69,12 @@ extern void x86_ce4100_early_setup(void);
+ static inline void x86_ce4100_early_setup(void) { }
+ #endif
+ 
++#ifdef CONFIG_X86_PS5
++extern void x86_ps5_early_setup(void);
++#else
++static inline void x86_ps5_early_setup(void) { }
++#endif
++
+ #include <linux/kexec_handover.h>
+ 
+ #ifndef _SETUP
+diff --git a/arch/x86/include/uapi/asm/bootparam.h b/arch/x86/include/uapi/asm/bootparam.h
+index dafbf581c515..791687363cbf 100644
+--- a/arch/x86/include/uapi/asm/bootparam.h
++++ b/arch/x86/include/uapi/asm/bootparam.h
+@@ -207,6 +207,7 @@ enum x86_hardware_subarch {
+ 	X86_SUBARCH_XEN,
+ 	X86_SUBARCH_INTEL_MID,
+ 	X86_SUBARCH_CE4100,
++	X86_SUBARCH_PS5,
+ 	X86_NR_SUBARCHS,
+ };
+ 
+diff --git a/arch/x86/kernel/head64.c b/arch/x86/kernel/head64.c
+index fd28b53dbac5..569fc764d267 100644
+--- a/arch/x86/kernel/head64.c
++++ b/arch/x86/kernel/head64.c
+@@ -303,6 +303,11 @@ void __init __noreturn x86_64_start_reservations(char *real_mode_data)
+ 	case X86_SUBARCH_INTEL_MID:
+ 		x86_intel_mid_early_setup();
+ 		break;
++#ifdef CONFIG_X86_PS5
++	case X86_SUBARCH_PS5:
++		x86_ps5_early_setup();
++		break;
++#endif
+ 	default:
+ 		break;
+ 	}
+diff --git a/arch/x86/kernel/i8253.c b/arch/x86/kernel/i8253.c
+index cb9852ad6098..83bb0cf9e40b 100644
+--- a/arch/x86/kernel/i8253.c
++++ b/arch/x86/kernel/i8253.c
+@@ -31,6 +31,11 @@ struct clock_event_device *global_clock_event;
+  */
+ static bool __init use_pit(void)
+ {
++#ifdef CONFIG_X86_PS5
++	/* PIT is not available. */
++	return false;
++#endif
++
+ 	if (!IS_ENABLED(CONFIG_X86_TSC) || !boot_cpu_has(X86_FEATURE_TSC))
+ 		return true;
+ 
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 0d731ce4c4e1..802289cfe489 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -112,7 +112,11 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_host);
+  */
+ #ifdef CONFIG_X86_64
+ static
++#ifdef CONFIG_X86_PS5
++u64 __read_mostly efer_reserved_bits = ~((u64)(EFER_SCE | EFER_LME | EFER_LMA | EFER_NDA));
++#else
+ u64 __read_mostly efer_reserved_bits = ~((u64)(EFER_SCE | EFER_LME | EFER_LMA));
++#endif
+ #else
+ static u64 __read_mostly efer_reserved_bits = ~((u64)EFER_SCE);
+ #endif
+diff --git a/arch/x86/mm/pgprot.c b/arch/x86/mm/pgprot.c
+index dc1afd5c839d..745db92fb2c1 100644
+--- a/arch/x86/mm/pgprot.c
++++ b/arch/x86/mm/pgprot.c
+@@ -10,7 +10,11 @@ static pgprot_t protection_map[16] __ro_after_init = {
+ 	[VM_READ]					= PAGE_READONLY,
+ 	[VM_WRITE]					= PAGE_COPY,
+ 	[VM_WRITE | VM_READ]				= PAGE_COPY,
++#ifdef CONFIG_X86_PS5
++	[VM_EXEC]					= PAGE_EXECONLY,
++#else
+ 	[VM_EXEC]					= PAGE_READONLY_EXEC,
++#endif
+ 	[VM_EXEC | VM_READ]				= PAGE_READONLY_EXEC,
+ 	[VM_EXEC | VM_WRITE]				= PAGE_COPY_EXEC,
+ 	[VM_EXEC | VM_WRITE | VM_READ]			= PAGE_COPY_EXEC,
+@@ -18,7 +22,11 @@ static pgprot_t protection_map[16] __ro_after_init = {
+ 	[VM_SHARED | VM_READ]				= PAGE_READONLY,
+ 	[VM_SHARED | VM_WRITE]				= PAGE_SHARED,
+ 	[VM_SHARED | VM_WRITE | VM_READ]		= PAGE_SHARED,
++#ifdef CONFIG_X86_PS5
++	[VM_SHARED | VM_EXEC]				= PAGE_EXECONLY,
++#else
+ 	[VM_SHARED | VM_EXEC]				= PAGE_READONLY_EXEC,
++#endif
+ 	[VM_SHARED | VM_EXEC | VM_READ]			= PAGE_READONLY_EXEC,
+ 	[VM_SHARED | VM_EXEC | VM_WRITE]		= PAGE_SHARED_EXEC,
+ 	[VM_SHARED | VM_EXEC | VM_WRITE | VM_READ]	= PAGE_SHARED_EXEC
+diff --git a/arch/x86/pci/common.c b/arch/x86/pci/common.c
+index ddb798603201..eb9ea086e755 100644
+--- a/arch/x86/pci/common.c
++++ b/arch/x86/pci/common.c
+@@ -57,14 +57,84 @@ int raw_pci_write(unsigned int domain, unsigned int bus, unsigned int devfn,
+ 	return -EINVAL;
+ }
+ 
++#ifdef CONFIG_X86_PS5
++static int sfc_read(unsigned int domain, unsigned int bus, unsigned int rid,
++						int reg, int len, u32 *val)
++{
++	int busno;
++	int slot;
++	int func;
++
++	busno = (rid >> 8) & 0xff;
++	slot = (rid & 0xff) >> 3;
++	func = rid & 0x07;
++
++	if (busno == 0 || busno == 32) {
++		raw_pci_write(domain, bus, 0, 0xd90, 4, 4);
++		raw_pci_write(domain, bus, 0, 0xd80, 4, (32 << 24) | (slot << 19) | (func << 16) | (reg & 0xf80));
++		return raw_pci_read(domain, bus, 0, (reg & 0x7f) | 0xf80, len, val);
++	} else if (busno < 32) {
++		raw_pci_write(domain, bus, 0, 0xd10, 4, busno == 1 ? 4 : 5);
++		raw_pci_write(domain, bus, 0, 0xd00, 4, (busno << 24) | (slot << 19) | (func << 16) | (reg & 0xf80));
++		return raw_pci_read(domain, bus, 0, (reg & 0x7f) | 0xf00, len, val);
++	} else {
++		panic("wrong bus number");
++	}
++}
++
++static int sfc_write(unsigned int domain, unsigned int bus, unsigned int rid,
++						int reg, int len, u32 val)
++{
++	int busno;
++	int slot;
++	int func;
++
++	busno = (rid >> 8) & 0xff;
++	slot = (rid & 0xff) >> 3;
++	func = rid & 0x07;
++
++	if (busno == 0 || busno == 32) {
++		raw_pci_write(domain, bus, 0, 0xd90, 4, 4);
++		raw_pci_write(domain, bus, 0, 0xd80, 4, (32 << 24) | (slot << 19) | (func << 16) | (reg & 0xf80));
++		return raw_pci_write(domain, bus, 0, (reg & 0x7f) | 0xf80, len, val);
++	} else if (busno < 32) {
++		raw_pci_write(domain, bus, 0, 0xd10, 4, busno == 1 ? 4 : 5);
++		raw_pci_write(domain, bus, 0, 0xd00, 4, (busno << 24) | (slot << 19) | (func << 16) | (reg & 0xf80));
++		return raw_pci_write(domain, bus, 0, (reg & 0x7f) | 0xf00, len, val);
++	} else {
++		panic("wrong bus number");
++	}
++}
++#endif
++
+ static int pci_read(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 *value)
+ {
++#ifdef CONFIG_X86_PS5
++	if (pci_ari_enabled(bus)) {
++		u32 rid = 0;
++		raw_pci_read(pci_domain_nr(bus), bus->number, devfn, 0x150, 2, &rid);
++		if (rid != 0 && rid != 0xffff) {
++			return sfc_read(pci_domain_nr(bus), bus->number, rid, where, size, value);
++		}
++	}
++#endif
++
+ 	return raw_pci_read(pci_domain_nr(bus), bus->number,
+ 				 devfn, where, size, value);
+ }
+ 
+ static int pci_write(struct pci_bus *bus, unsigned int devfn, int where, int size, u32 value)
+ {
++#ifdef CONFIG_X86_PS5
++	if (pci_ari_enabled(bus)) {
++		u32 rid = 0;
++		raw_pci_read(pci_domain_nr(bus), bus->number, devfn, 0x150, 2, &rid);
++		if (rid != 0 && rid != 0xffff) {
++			return sfc_write(pci_domain_nr(bus), bus->number, rid, where, size, value);
++		}
++	}
++#endif
++
+ 	return raw_pci_write(pci_domain_nr(bus), bus->number,
+ 				  devfn, where, size, value);
+ }
+diff --git a/arch/x86/platform/Makefile b/arch/x86/platform/Makefile
+index 3ed03a2552d0..40ffa1a2156a 100644
+--- a/arch/x86/platform/Makefile
++++ b/arch/x86/platform/Makefile
+@@ -9,6 +9,7 @@ obj-y	+= intel/
+ obj-y	+= intel-mid/
+ obj-y	+= intel-quark/
+ obj-y	+= olpc/
++obj-y	+= ps5/
+ obj-y	+= scx200/
+ obj-y	+= ts5500/
+ obj-y	+= uv/
+diff --git a/arch/x86/platform/ps5/Makefile b/arch/x86/platform/ps5/Makefile
+new file mode 100644
+index 000000000000..5263181876f8
+--- /dev/null
++++ b/arch/x86/platform/ps5/Makefile
+@@ -0,0 +1 @@
++obj-$(CONFIG_X86_PS5) += ps5.o
+diff --git a/arch/x86/platform/ps5/ps5.c b/arch/x86/platform/ps5/ps5.c
+new file mode 100644
+index 000000000000..731fed163a83
+--- /dev/null
++++ b/arch/x86/platform/ps5/ps5.c
+@@ -0,0 +1,51 @@
++#include <linux/module.h>
++#include <linux/ps5.h>
++
++#include <asm/apic.h>
++#include <asm/i8259.h>
++#include <asm/reboot.h>
++#include <asm/setup.h>
++
++#define PS5_DEFAULT_TSC_FREQ 1596300000
++
++static __noreturn void ps5_power_off(void) {
++	icc_power_shutdown();
++}
++
++static __noreturn void ps5_emergency_restart(void) {
++	icc_power_reboot();
++}
++
++static __noreturn void ps5_restart(char *cmd) {
++	ps5_emergency_restart();
++}
++
++static unsigned long __init ps5_calibrate_tsc(void)
++{
++	return PS5_DEFAULT_TSC_FREQ / 1000;
++}
++
++static void ps5_get_wallclock(struct timespec64 *now)
++{
++	now->tv_sec = now->tv_nsec = 0;
++}
++
++static int ps5_set_wallclock(const struct timespec64 *now)
++{
++	return -ENODEV;
++}
++
++void __init x86_ps5_early_setup(void)
++{
++	x86_platform.calibrate_tsc = ps5_calibrate_tsc;
++	x86_platform.get_wallclock = ps5_get_wallclock;
++	x86_platform.set_wallclock = ps5_set_wallclock;
++	x86_platform.legacy.rtc = 0;
++
++	machine_ops.restart = ps5_restart;
++	machine_ops.power_off = ps5_power_off;
++	machine_ops.emergency_restart = ps5_emergency_restart;
++	pm_power_off = ps5_power_off;
++
++	legacy_pic = &null_legacy_pic;
++}
+diff --git a/block/partitions/efi.c b/block/partitions/efi.c
+index 638261e9f2fb..faf231724732 100644
+--- a/block/partitions/efi.c
++++ b/block/partitions/efi.c
+@@ -143,8 +143,14 @@ static inline int pmbr_part_valid(gpt_mbr_record *part)
+ 		goto invalid;
+ 
+ 	/* set to 0x00000001 (i.e., the LBA of the GPT Partition Header) */
++#ifdef CONFIG_X86_PS5
++	if (le32_to_cpu(part->starting_lba) != GPT_PRIMARY_PARTITION_TABLE_LBA &&
++	    le32_to_cpu(part->starting_lba) != 9216 + GPT_PRIMARY_PARTITION_TABLE_LBA)
++		goto invalid;
++#else
+ 	if (le32_to_cpu(part->starting_lba) != GPT_PRIMARY_PARTITION_TABLE_LBA)
+ 		goto invalid;
++#endif
+ 
+ 	return GPT_MBR_PROTECTIVE;
+ invalid:
+@@ -599,6 +605,11 @@ static int find_valid_gpt(struct parsed_partitions *state, gpt_header **gpt,
+ 		if (!legacymbr)
+ 			goto fail;
+ 
++#ifdef CONFIG_X86_PS5
++		if (strncmp(state->disk->disk_name, "nvme", 4) == 0) {
++			read_lba(state, 9216, (u8 *)legacymbr, sizeof(*legacymbr));
++		} else
++#endif
+ 		read_lba(state, 0, (u8 *)legacymbr, sizeof(*legacymbr));
+ 		good_pmbr = is_pmbr_valid(legacymbr, total_sectors);
+ 		kfree(legacymbr);
+@@ -611,6 +622,12 @@ static int find_valid_gpt(struct parsed_partitions *state, gpt_header **gpt,
+ 						"protective" : "hybrid");
+ 	}
+ 
++#ifdef CONFIG_X86_PS5
++	if (strncmp(state->disk->disk_name, "nvme", 4) == 0) {
++		good_pgpt = is_gpt_valid(state, 9216 + GPT_PRIMARY_PARTITION_TABLE_LBA,
++					 &pgpt, &pptes);
++	} else
++#endif
+ 	good_pgpt = is_gpt_valid(state, GPT_PRIMARY_PARTITION_TABLE_LBA,
+ 				 &pgpt, &pptes);
+         if (good_pgpt)
+diff --git a/drivers/Makefile b/drivers/Makefile
+index ccc05f1eae3e..2074dcdb2df8 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -199,3 +199,5 @@ obj-y				+= resctrl/
+ 
+ obj-$(CONFIG_DIBS)		+= dibs/
+ obj-$(CONFIG_S390)		+= s390/
++
++obj-$(CONFIG_X86_PS5)		+= ps5/
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c
+index 35d04e69aec0..314ceaaaab9f 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c
+@@ -221,8 +221,14 @@ static bool amdgpu_read_bios_from_rom(struct amdgpu_device *adev)
+ 
+ static bool amdgpu_read_platform_bios(struct amdgpu_device *adev)
+ {
++#ifdef CONFIG_X86_PS5
++	/* Hardcode vbios rom address. */
++	phys_addr_t rom = 0xc0000;
++	size_t romlen = 0x10000;
++#else
+ 	phys_addr_t rom = adev->pdev->rom;
+ 	size_t romlen = adev->pdev->romlen;
++#endif
+ 	void __iomem *bios;
+ 
+ 	adev->bios = NULL;
+@@ -436,6 +442,7 @@ static inline bool amdgpu_acpi_vfct_bios(struct amdgpu_device *adev)
+ 
+ static bool amdgpu_get_bios_apu(struct amdgpu_device *adev)
+ {
++#ifndef CONFIG_X86_PS5
+ 	if (amdgpu_acpi_vfct_bios(adev)) {
+ 		dev_info(adev->dev, "Fetched VBIOS from VFCT\n");
+ 		goto success;
+@@ -450,6 +457,7 @@ static bool amdgpu_get_bios_apu(struct amdgpu_device *adev)
+ 		dev_info(adev->dev, "Fetched VBIOS from ROM BAR\n");
+ 		goto success;
+ 	}
++#endif
+ 
+ 	if (amdgpu_read_platform_bios(adev)) {
+ 		dev_info(adev->dev, "Fetched VBIOS from platform\n");
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
+index cd8a49e32e77..3add64662d97 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
+@@ -2665,6 +2665,26 @@ static int amdgpu_device_parse_gpu_info_fw(struct amdgpu_device *adev)
+ 	case CHIP_CYAN_SKILLFISH:
+ 		if (adev->discovery.bin)
+ 			return 0;
++#ifdef CONFIG_X86_PS5
++		/* Hardcode gfxinfo. */
++		adev->gfx.config.max_shader_engines = 2;
++		adev->gfx.config.max_cu_per_sh = 10;
++		adev->gfx.config.max_sh_per_se = 2;
++		adev->gfx.config.max_backends_per_se = 8;
++		adev->gfx.config.max_texture_channel_caches = 16;
++		adev->gfx.config.max_gprs = 1024;
++		adev->gfx.config.max_gs_threads = 32;
++		adev->gfx.config.gs_vgt_table_depth = 32;
++		adev->gfx.config.gs_prim_buffer_depth = 1792;
++		adev->gfx.config.double_offchip_lds_buf = 1;
++		adev->gfx.cu_info.wave_front_size = 32;
++		adev->gfx.cu_info.max_waves_per_simd = 20;
++		adev->gfx.cu_info.max_scratch_slots_per_cu = 32;
++		adev->gfx.cu_info.lds_size = 64;
++		adev->gfx.config.num_sc_per_sh = 1;
++		adev->gfx.config.num_packer_per_sc = 2;
++		return 0;
++#endif
+ 		chip_name = "cyan_skillfish";
+ 		break;
+ 	}
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c
+index f9e0e80c4c18..db83fc02bde1 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c
+@@ -2857,6 +2857,9 @@ int amdgpu_discovery_set_ip_blocks(struct amdgpu_device *adev)
+ 			adev->ip_versions[SMUIO_HWIP][0] = IP_VERSION(11, 0, 8);
+ 			adev->ip_versions[GC_HWIP][0] = IP_VERSION(10, 1, 3);
+ 			adev->ip_versions[UVD_HWIP][0] = IP_VERSION(2, 0, 3);
++#ifdef CONFIG_X86_PS5
++			adev->ip_versions[DCE_HWIP][0] = IP_VERSION(2, 0, 3);
++#endif
+ 		}
+ 		break;
+ 	default:
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c
+index b56b6759e1c3..2e04844c3372 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_drv.c
+@@ -2179,6 +2179,7 @@ static const struct pci_device_id pciidlist[] = {
+ 	{0x1002, 0x7410, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_ALDEBARAN},
+ 
+ 	/* CYAN_SKILLFISH */
++	{0x1002, 0x13DA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_CYAN_SKILLFISH|AMD_IS_APU},
+ 	{0x1002, 0x13DB, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_CYAN_SKILLFISH|AMD_IS_APU},
+ 	{0x1002, 0x13F9, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_CYAN_SKILLFISH|AMD_IS_APU},
+ 	{0x1002, 0x13FA, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CHIP_CYAN_SKILLFISH|AMD_IS_APU},
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_gfx.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_gfx.c
+index 8b118c53f351..87ded14ac041 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_gfx.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_gfx.c
+@@ -2303,6 +2303,11 @@ void amdgpu_gfx_profile_ring_begin_use(struct amdgpu_ring *ring)
+ 	enum PP_SMC_POWER_PROFILE profile;
+ 	int r;
+ 
++#ifdef CONFIG_X86_PS5
++	/* DPM is not supported. */
++	return;
++#endif
++
+ 	if (amdgpu_dpm_is_overdrive_enabled(adev))
+ 		return;
+ 
+@@ -2338,6 +2343,11 @@ void amdgpu_gfx_profile_ring_end_use(struct amdgpu_ring *ring)
+ {
+ 	struct amdgpu_device *adev = ring->adev;
+ 
++#ifdef CONFIG_X86_PS5
++	/* DPM is not supported. */
++	return;
++#endif
++
+ 	if (amdgpu_dpm_is_overdrive_enabled(adev))
+ 		return;
+ 
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_sdma.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_sdma.c
+index 321310ba2c08..764da52902ac 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_sdma.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_sdma.c
+@@ -210,6 +210,9 @@ int amdgpu_sdma_init_microcode(struct amdgpu_device *adev,
+ 	const struct sdma_firmware_header_v3_0 *sdma_hv3;
+ 	uint16_t version_major;
+ 	char ucode_prefix[30];
++#ifdef CONFIG_X86_PS5
++	struct common_firmware_header *hdr;
++#endif
+ 
+ 	amdgpu_ucode_ip_version_decode(adev, SDMA0_HWIP, ucode_prefix, sizeof(ucode_prefix));
+ 	if (instance == 0)
+@@ -222,6 +225,11 @@ int amdgpu_sdma_init_microcode(struct amdgpu_device *adev,
+ 					   "amdgpu/%s%d.bin", ucode_prefix, instance);
+ 	if (err)
+ 		goto out;
++#ifdef CONFIG_X86_PS5
++	hdr = (struct common_firmware_header *)adev->sdma.instance[instance].fw->data;
++	hdr->ucode_array_offset_bytes = cpu_to_le32(le32_to_cpu(hdr->ucode_array_offset_bytes) + 0x100);
++	hdr->ucode_size_bytes = cpu_to_le32(le32_to_cpu(hdr->ucode_size_bytes) - 0x200);
++#endif
+ 
+ 	header = (const struct common_firmware_header *)
+ 		adev->sdma.instance[instance].fw->data;
+diff --git a/drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c b/drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c
+index fc65fb36e115..04b27a4121cc 100644
+--- a/drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c
++++ b/drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c
+@@ -4202,6 +4202,14 @@ static void gfx_v10_0_check_gfxoff_flag(struct amdgpu_device *adev)
+ 	}
+ }
+ 
++static void gfx_v10_0_patch_ucode(const u8 *data)
++{
++	struct common_firmware_header *hdr;
++	hdr = (struct common_firmware_header *)data;
++	hdr->ucode_array_offset_bytes = cpu_to_le32(le32_to_cpu(hdr->ucode_array_offset_bytes) + 0x100);
++	hdr->ucode_size_bytes = cpu_to_le32(le32_to_cpu(hdr->ucode_size_bytes) - 0x200);
++}
++
+ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ {
+ 	char fw_name[53];
+@@ -4224,6 +4232,9 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ 				   "amdgpu/%s_pfp%s.bin", ucode_prefix, wks);
+ 	if (err)
+ 		goto out;
++#ifdef CONFIG_X86_PS5
++	gfx_v10_0_patch_ucode(adev->gfx.pfp_fw->data);
++#endif
+ 	amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_PFP);
+ 
+ 	err = amdgpu_ucode_request(adev, &adev->gfx.me_fw,
+@@ -4231,6 +4242,9 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ 				   "amdgpu/%s_me%s.bin", ucode_prefix, wks);
+ 	if (err)
+ 		goto out;
++#ifdef CONFIG_X86_PS5
++	gfx_v10_0_patch_ucode(adev->gfx.me_fw->data);
++#endif
+ 	amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_ME);
+ 
+ 	err = amdgpu_ucode_request(adev, &adev->gfx.ce_fw,
+@@ -4238,6 +4252,9 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ 				   "amdgpu/%s_ce%s.bin", ucode_prefix, wks);
+ 	if (err)
+ 		goto out;
++#ifdef CONFIG_X86_PS5
++	gfx_v10_0_patch_ucode(adev->gfx.ce_fw->data);
++#endif
+ 	amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_CE);
+ 
+ 	if (!amdgpu_sriov_vf(adev)) {
+@@ -4245,6 +4262,9 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ 		err = request_firmware(&adev->gfx.rlc_fw, fw_name, adev->dev);
+ 		if (err)
+ 			goto out;
++#ifdef CONFIG_X86_PS5
++		gfx_v10_0_patch_ucode(adev->gfx.rlc_fw->data);
++#endif
+ 
+ 		/* don't validate this firmware. There are apparently firmwares
+ 		 * in the wild with incorrect size in the header
+@@ -4262,6 +4282,9 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ 				   "amdgpu/%s_mec%s.bin", ucode_prefix, wks);
+ 	if (err)
+ 		goto out;
++#ifdef CONFIG_X86_PS5
++	gfx_v10_0_patch_ucode(adev->gfx.mec_fw->data);
++#endif
+ 	amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_MEC1);
+ 	amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_MEC1_JT);
+ 
+@@ -4269,6 +4292,9 @@ static int gfx_v10_0_init_microcode(struct amdgpu_device *adev)
+ 				   AMDGPU_UCODE_REQUIRED,
+ 				   "amdgpu/%s_mec2%s.bin", ucode_prefix, wks);
+ 	if (!err) {
++#ifdef CONFIG_X86_PS5
++		gfx_v10_0_patch_ucode(adev->gfx.mec2_fw->data);
++#endif
+ 		amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_MEC2);
+ 		amdgpu_gfx_cp_init_microcode(adev, AMDGPU_UCODE_ID_CP_MEC2_JT);
+ 	} else {
+diff --git a/drivers/gpu/drm/amd/amdgpu/nv.c b/drivers/gpu/drm/amd/amdgpu/nv.c
+index 50e77d9b30af..cd60d0472ba8 100644
+--- a/drivers/gpu/drm/amd/amdgpu/nv.c
++++ b/drivers/gpu/drm/amd/amdgpu/nv.c
+@@ -873,6 +873,10 @@ static int nv_common_early_init(struct amdgpu_ip_block *ip_block)
+ 		adev->cg_flags = 0;
+ 		adev->pg_flags = 0;
+ 		adev->external_rev_id = adev->rev_id + 0x82;
++#ifdef CONFIG_X86_PS5
++		/* Hardcode bc250's id. Remove when mesa's patch is widely available. */
++		adev->external_rev_id = 0x84;
++#endif
+ 		break;
+ 	case IP_VERSION(10, 3, 6):
+ 		adev->cg_flags = AMD_CG_SUPPORT_GFX_MGCG |
+diff --git a/drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c b/drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c
+index 45e2933214a8..6aab1382ee42 100644
+--- a/drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c
++++ b/drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c
+@@ -1362,6 +1362,12 @@ static int sdma_v5_0_early_init(struct amdgpu_ip_block *ip_block)
+ 	struct amdgpu_device *adev = ip_block->adev;
+ 	int r;
+ 
++#ifdef CONFIG_X86_PS5
++	/* Reset SDMA to prevent ring test failures after reload. */
++	sdma_v5_0_soft_reset_engine(adev, 0);
++	sdma_v5_0_soft_reset_engine(adev, 1);
++#endif
++
+ 	r = sdma_v5_0_init_microcode(adev);
+ 	if (r)
+ 		return r;
+diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
+index 6c5a1ba4cb00..a7c2592e2108 100644
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.c
+@@ -2990,7 +2990,10 @@ static int dm_hw_init(struct amdgpu_ip_block *ip_block)
+ 	r = amdgpu_dm_init(adev);
+ 	if (r)
+ 		return r;
++#ifndef CONFIG_X86_PS5
++	/* HPD is not supported. */
+ 	amdgpu_dm_hpd_init(adev);
++#endif
+ 
+ 	r = dm_oem_i2c_hw_init(adev);
+ 	if (r)
+@@ -3011,7 +3014,10 @@ static int dm_hw_fini(struct amdgpu_ip_block *ip_block)
+ {
+ 	struct amdgpu_device *adev = ip_block->adev;
+ 
++#ifndef CONFIG_X86_PS5
++	/* HPD is not supported. */
+ 	amdgpu_dm_hpd_fini(adev);
++#endif
+ 
+ 	amdgpu_dm_irq_fini(adev);
+ 	amdgpu_dm_fini(adev);
+@@ -6787,6 +6793,12 @@ static void fill_stream_properties_from_drm_display_mode(
+ 
+ 	stream->output_color_space = get_output_color_space(timing_out, connector_state);
+ 	stream->content_type = get_output_content_type(connector_state);
++
++#ifdef CONFIG_X86_PS5
++	/* Hardcode RGB888. */
++	timing_out->pixel_encoding = PIXEL_ENCODING_RGB;
++	timing_out->display_color_depth = COLOR_DEPTH_888;
++#endif
+ }
+ 
+ static void fill_audio_info(struct audio_info *audio_info,
+@@ -8163,6 +8175,20 @@ create_validate_stream_for_sink(struct drm_connector *connector,
+ 	return stream;
+ }
+ 
++#ifdef CONFIG_X86_PS5
++static bool is_ps5_supported(const struct drm_display_mode *mode)
++{
++	switch (mode->clock) {
++	case 148500:
++	case 241500:
++	case 241700:
++	case 594000:
++		return true;
++	}
++	return false;
++}
++#endif
++
+ enum drm_mode_status amdgpu_dm_connector_mode_valid(struct drm_connector *connector,
+ 				   const struct drm_display_mode *mode)
+ {
+@@ -8176,6 +8202,11 @@ enum drm_mode_status amdgpu_dm_connector_mode_valid(struct drm_connector *connec
+ 	 */
+ 	struct amdgpu_dm_connector *aconnector = to_amdgpu_dm_connector(connector);
+ 
++#ifdef CONFIG_X86_PS5
++	if (!is_ps5_supported(mode))
++		return MODE_ERROR;
++#endif
++
+ 	if ((mode->flags & DRM_MODE_FLAG_INTERLACE) ||
+ 			(mode->flags & DRM_MODE_FLAG_DBLSCAN))
+ 		return result;
+diff --git a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+index 848c267ef11e..d1ea8035e7a2 100644
+--- a/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
++++ b/drivers/gpu/drm/amd/display/dc/core/dc_resource.c
+@@ -204,6 +204,7 @@ enum dce_version resource_parse_asic_id(struct hw_asic_id asic_id)
+ 		    asic_id.chip_id == DEVICE_ID_NV_13FA ||
+ 		    asic_id.chip_id == DEVICE_ID_NV_13FB ||
+ 		    asic_id.chip_id == DEVICE_ID_NV_13FC ||
++		    asic_id.chip_id == DEVICE_ID_NV_13DA ||
+ 		    asic_id.chip_id == DEVICE_ID_NV_13DB) {
+ 			dc_version = DCN_VERSION_2_01;
+ 			break;
+diff --git a/drivers/gpu/drm/amd/display/dc/hwss/dce110/dce110_hwseq.c b/drivers/gpu/drm/amd/display/dc/hwss/dce110/dce110_hwseq.c
+index 8b8410ef3e47..ca166dc00ac5 100644
+--- a/drivers/gpu/drm/amd/display/dc/hwss/dce110/dce110_hwseq.c
++++ b/drivers/gpu/drm/amd/display/dc/hwss/dce110/dce110_hwseq.c
+@@ -1786,6 +1786,11 @@ static void power_down_clock_sources(struct dc *dc)
+ 
+ static void power_down_all_hw_blocks(struct dc *dc)
+ {
++#ifdef CONFIG_X86_PS5
++	/* Ignore this to prevent blackscreen. */
++	return;
++#endif
++
+ 	power_down_encoders(dc);
+ 
+ 	power_down_controllers(dc);
+diff --git a/drivers/gpu/drm/amd/display/dc/link/link_dpms.c b/drivers/gpu/drm/amd/display/dc/link/link_dpms.c
+index a36762915943..af640139b1f3 100644
+--- a/drivers/gpu/drm/amd/display/dc/link/link_dpms.c
++++ b/drivers/gpu/drm/amd/display/dc/link/link_dpms.c
+@@ -35,6 +35,9 @@
+  * boundary between link and stream is not clearly defined.
+  */
+ 
++#ifdef CONFIG_X86_PS5
++#include <linux/ps5.h>
++#endif
+ #include "link_dpms.h"
+ #include "link_hwss.h"
+ #include "link_validation.h"
+@@ -2472,6 +2475,10 @@ void link_set_dpms_off(struct pipe_ctx *pipe_ctx)
+ 		/* since current psp not loaded, we need to reset it to default */
+ 		link->panel_mode = panel_mode;
+ 	}
++
++#ifdef CONFIG_X86_PS5
++	sceHdmiInitVideoConfig();
++#endif
+ }
+ 
+ void link_set_dpms_on(
+@@ -2690,4 +2697,17 @@ void link_set_dpms_on(
+ 	if (dc_is_hdmi_signal(pipe_ctx->stream->signal)) {
+ 		set_avmute(pipe_ctx, false);
+ 	}
++
++#ifdef CONFIG_X86_PS5
++	struct dc_crtc_timing *t = &pipe_ctx->stream->timing;
++
++	int w = t->h_addressable;
++	int h = t->v_addressable;
++	int hz = (t->pix_clk_100hz * 100) / (t->h_total * t->v_total);
++
++	sceHdmiSetVideoConfig(w, h, hz);
++	sceHdmiSetAudioConfig();
++	sceHdmiDeviceSetVideoMute(0);
++	sceHdmiSetAudioMute(0);
++#endif
+ }
+diff --git a/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_capability.c b/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_capability.c
+index ad90a0106938..25a9166cbc90 100644
+--- a/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_capability.c
++++ b/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_capability.c
+@@ -1015,6 +1015,12 @@ bool link_decide_link_settings(struct dc_stream_state *stream,
+ 		decide_dp_link_settings(link, link_setting, req_bw);
+ 	}
+ 
++#ifdef CONFIG_X86_PS5
++	/* Hardcode HBR3x4 link setting. */
++	link_setting->link_rate = LINK_RATE_HIGH3;
++	link_setting->lane_count = LANE_COUNT_FOUR;
++#endif
++
+ 	return link_setting->lane_count != LANE_COUNT_UNKNOWN &&
+ 			link_setting->link_rate != LINK_RATE_UNKNOWN;
+ }
+@@ -1455,6 +1461,8 @@ void dpcd_set_source_specific_data(struct dc_link *link)
+ 				(uint8_t *)(&amd_device_id),
+ 				sizeof(amd_device_id));
+ 
++#ifndef CONFIG_X86_PS5
++		/* Ignore unsupported dpcd address. */
+ 		if (link->ctx->dce_version >= DCN_VERSION_2_0 &&
+ 			link->dc->caps.min_horizontal_blanking_period != 0) {
+ 
+@@ -1464,6 +1472,7 @@ void dpcd_set_source_specific_data(struct dc_link *link)
+ 				DP_SOURCE_MINIMUM_HBLANK_SUPPORTED, (uint8_t *)(&hblank_size),
+ 				sizeof(hblank_size));
+ 		}
++#endif
+ 		DC_TRACE_LEVEL_MESSAGE(DAL_TRACE_LEVEL_INFORMATION,
+ 							WPP_BIT_FLAG_DC_DETECTION_DP_CAPS,
+ 							"result=%u link_index=%u enum dce_version=%d DPCD=0x%04X min_hblank=%u branch_dev_id=0x%x branch_dev_name='%c%c%c%c%c%c'",
+diff --git a/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_phy.c b/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_phy.c
+index 49521ac4b0e8..f68e7dae2bfd 100644
+--- a/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_phy.c
++++ b/drivers/gpu/drm/amd/display/dc/link/protocols/link_dp_phy.c
+@@ -63,8 +63,11 @@ void dp_enable_link_phy(
+ 	const struct dc_link_settings *link_settings)
+ {
+ 	link->cur_link_settings = *link_settings;
++#ifndef CONFIG_X86_PS5
++	/* Ignore this call to prevent link training failure. */
+ 	link->dc->hwss.enable_dp_link_output(link, link_res, signal,
+ 			clock_source, link_settings);
++#endif
+ 	dpcd_write_rx_power_ctrl(link, true);
+ }
+ 
+@@ -79,7 +82,10 @@ void dp_disable_link_phy(struct dc_link *link,
+ 			link->type != dc_connection_none)
+ 		dpcd_write_rx_power_ctrl(link, false);
+ 
++#ifndef CONFIG_X86_PS5
++	/* Ignore this call to prevent link training failure. */
+ 	dc->hwss.disable_link_output(link, link_res, signal);
++#endif
+ 	/* Clear current link setting.*/
+ 	memset(&link->cur_link_settings, 0,
+ 			sizeof(link->cur_link_settings));
+@@ -146,6 +152,11 @@ enum dc_status dp_set_fec_ready(struct dc_link *link, const struct link_resource
+ 	enum dc_status status = DC_OK;
+ 	uint8_t fec_config = 0;
+ 
++#ifdef CONFIG_X86_PS5
++	/* Ignore this to prevent flickering. */
++	return DC_NOT_SUPPORTED;
++#endif
++
+ 	if (!link->dc->config.unify_link_enc_assignment)
+ 		link_enc = link_enc_cfg_get_link_enc(link);
+ 	ASSERT(link_enc);
+@@ -181,6 +192,11 @@ void dp_set_fec_enable(struct dc_link *link, const struct link_resource *link_re
+ {
+ 	struct link_encoder *link_enc = link_res->dio_link_enc;
+ 
++#ifdef CONFIG_X86_PS5
++	/* Ignore this to prevent flickering. */
++	return;
++#endif
++
+ 	if (!link->dc->config.unify_link_enc_assignment)
+ 		link_enc = link_enc_cfg_get_link_enc(link);
+ 
+diff --git a/drivers/gpu/drm/amd/display/include/dal_asic_id.h b/drivers/gpu/drm/amd/display/include/dal_asic_id.h
+index 8aea50aa9533..8b647bd95691 100644
+--- a/drivers/gpu/drm/amd/display/include/dal_asic_id.h
++++ b/drivers/gpu/drm/amd/display/include/dal_asic_id.h
+@@ -217,6 +217,7 @@ enum {
+ #define DEVICE_ID_NV_13FA 0x13FA
+ #define DEVICE_ID_NV_13FB 0x13FB
+ #define DEVICE_ID_NV_13FC 0x13FC
++#define DEVICE_ID_NV_13DA 0x13DA
+ #define DEVICE_ID_NV_13DB 0x13DB
+ #define FAMILY_VGH 144
+ #define DEVICE_ID_VGH_163F 0x163F
+diff --git a/drivers/gpu/drm/drm_edid.c b/drivers/gpu/drm/drm_edid.c
+index 26bb7710a462..281a41166e78 100644
+--- a/drivers/gpu/drm/drm_edid.c
++++ b/drivers/gpu/drm/drm_edid.c
+@@ -2219,6 +2219,10 @@ static void connector_bad_edid(struct drm_connector *connector,
+ 		edid_block_dump(KERN_DEBUG, edid + i, i);
+ }
+ 
++#ifdef CONFIG_X86_PS5
++extern struct drm_edid *real_edid;
++#endif
++
+ /* Get override or firmware EDID */
+ static const struct drm_edid *drm_edid_override_get(struct drm_connector *connector)
+ {
+@@ -2234,6 +2238,11 @@ static const struct drm_edid *drm_edid_override_get(struct drm_connector *connec
+ 	if (!override)
+ 		override = drm_edid_load_firmware(connector);
+ 
++#ifdef CONFIG_X86_PS5
++	if (IS_ERR(override) && real_edid)
++		override = drm_edid_dup(real_edid);
++#endif
++
+ 	return IS_ERR(override) ? NULL : override;
+ }
+ 
+diff --git a/drivers/hwmon/k10temp.c b/drivers/hwmon/k10temp.c
+index a5d8f45b7881..3c7b76af13e4 100644
+--- a/drivers/hwmon/k10temp.c
++++ b/drivers/hwmon/k10temp.c
+@@ -476,6 +476,7 @@ static int k10temp_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+ 			break;
+ 		case 0x31:	/* Zen2 Threadripper */
+ 		case 0x47:	/* Cyan Skillfish */
++		case 0x48:	/* PS5 */
+ 		case 0x60:	/* Renoir */
+ 		case 0x68:	/* Lucienne */
+ 		case 0x71:	/* Zen2 */
+diff --git a/drivers/iommu/amd/init.c b/drivers/iommu/amd/init.c
+index 58d6f5ae155f..8dc815dd8ec7 100644
+--- a/drivers/iommu/amd/init.c
++++ b/drivers/iommu/amd/init.c
+@@ -3088,6 +3088,8 @@ static void __init free_iommu_resources(void)
+ 	free_pci_segments();
+ }
+ 
++#ifndef CONFIG_X86_PS5
++
+ /* SB IOAPIC is always on this device in AMD systems */
+ #define IOAPIC_SB_DEVID		((0x00 << 8) | PCI_DEVFN(0x14, 0))
+ 
+@@ -3140,6 +3142,8 @@ static bool __init check_ioapic_information(void)
+ 	return ret;
+ }
+ 
++#endif
++
+ static void __init free_dma_resources(void)
+ {
+ 	amd_iommu_pdom_id_destroy();
+@@ -3264,8 +3268,11 @@ static int __init early_amd_iommu_init(void)
+ 	if (!is_kdump_kernel() || amd_iommu_disabled)
+ 		disable_iommus();
+ 
++#ifndef CONFIG_X86_PS5
++	/* IOAPIC is not available. */
+ 	if (amd_iommu_irq_remap)
+ 		amd_iommu_irq_remap = check_ioapic_information();
++#endif
+ 
+ 	if (amd_iommu_irq_remap) {
+ 		struct amd_iommu_pci_seg *pci_seg;
+diff --git a/drivers/pci/probe.c b/drivers/pci/probe.c
+index cd1cd044aaf9..b2422bea5d3c 100644
+--- a/drivers/pci/probe.c
++++ b/drivers/pci/probe.c
+@@ -2869,7 +2869,12 @@ static int next_ari_fn(struct pci_bus *bus, struct pci_dev *dev, int fn)
+ 
+ 	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ARI);
+ 	if (!pos)
++#ifdef CONFIG_X86_PS5
++		/* PCI config via sfc_read does not have ARI capability, so just assume fn + 1. */
++		return fn + 1;
++#else
+ 		return -ENODEV;
++#endif
+ 
+ 	pci_read_config_word(dev, pos + PCI_ARI_CAP, &cap);
+ 	next_fn = PCI_ARI_CAP_NFN(cap);
+diff --git a/drivers/ps5/Makefile b/drivers/ps5/Makefile
+new file mode 100644
+index 000000000000..b70ff1467446
+--- /dev/null
++++ b/drivers/ps5/Makefile
+@@ -0,0 +1 @@
++obj-y += spcie.o tpcie.o hdmi.o
+diff --git a/drivers/ps5/hdmi.c b/drivers/ps5/hdmi.c
+new file mode 100644
+index 000000000000..685e4c431b4b
+--- /dev/null
++++ b/drivers/ps5/hdmi.c
+@@ -0,0 +1,1022 @@
++#include <linux/module.h>
++#include <linux/ps5.h>
++#include <drm/drm_edid.h>
++
++#define HDMI_IC_TYPE_FLAVA3 2
++#define HDMI_IC_TYPE_VERDE 3
++
++struct icc_i2c_msg {
++	u8 code;
++	u16 length;
++	u8 count;
++	u8 data[];
++} __packed;
++
++struct i2c_cmd_hdr {
++	u8 major;
++	u8 length;
++	u8 minor;
++	u8 count;
++	u8 data[];
++} __packed;
++
++struct i2c_cmd_2_1 {
++	u8 length;
++	u8 reg_high;
++	u8 reg_low;
++	u8 data[];
++} __packed;
++
++struct i2c_cmd_write {
++	u8 length;
++	u8 reg_high;
++	u8 reg_low;
++	u8 data[];
++} __packed;
++
++struct i2c_cmd_mask {
++	u8 length;
++	u8 reg_high;
++	u8 reg_low;
++	u8 value;
++	u8 mask[];
++} __packed;
++
++struct i2c_cmd_delay {
++	u8 length;
++	u8 time_low;
++	u8 time_high;
++	u8 unk_03;
++} __packed;
++
++struct i2c_cmd_waitset {
++	u8 length;
++	u8 reg_high;
++	u8 reg_low;
++	u8 value;
++} __packed;
++
++struct i2c_cmd_waitclear {
++	u8 length;
++	u8 reg_high;
++	u8 reg_low;
++	u8 value;
++} __packed;
++
++struct i2c_cmd_3_5 {
++	u8 length;
++	u8 reg_high;
++	u8 reg_low;
++	u8 value;
++} __packed;
++
++struct i2c_cmd_5_3 {
++	u8 value;
++} __packed;
++
++struct i2c_cmd_5_4 {
++	u8 value;
++} __packed;
++
++struct i2c_cmd_5_5 {
++	u8 value;
++} __packed;
++
++struct i2c_block {
++	u8 length;
++	u16 reg;
++	u8 data[32];
++};
++
++struct i2c_context {
++	struct i2c_block blocks[128];
++	int block_index;
++	u8 msg_buf[ICC_MSG_MAX_SIZE - sizeof(struct icc_msg)];
++	u8 *msg_cur;
++	struct icc_i2c_msg *msg_hdr;
++};
++
++static struct i2c_context i2c_ctx;
++
++static u8 hdmi_ic_type;
++static u8 tmds_polarity;
++static u8 tmds_ch_swap;
++static u8 dp_polarity;
++static u8 dp_ch_swap;
++
++static void i2c_init(u8 code)
++{
++	i2c_ctx.msg_cur = i2c_ctx.msg_buf;
++	i2c_ctx.msg_hdr = (struct icc_i2c_msg *)i2c_ctx.msg_cur;
++
++	i2c_ctx.msg_hdr->code = code;
++	i2c_ctx.msg_hdr->length = 0;
++	i2c_ctx.msg_hdr->count = 0;
++	i2c_ctx.block_index = -1;
++
++	i2c_ctx.msg_cur += sizeof(*i2c_ctx.msg_hdr);
++}
++
++static int i2c_exec(void)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++	int ret;
++
++	i2c_ctx.msg_hdr->length = i2c_ctx.msg_cur - i2c_ctx.msg_buf;
++
++	msg->service_id = ICC_SERVICE_ID_HDMI;
++	msg->msg_type = 0;
++	msg->length = sizeof(*msg) + i2c_ctx.msg_hdr->length;
++	memcpy(msg->data, i2c_ctx.msg_hdr, i2c_ctx.msg_hdr->length);
++
++	ret = icc_query(buf, buf);
++	if (ret)
++		return ret;
++
++	return 0;
++}
++
++static void i2c_write_block(struct i2c_block *block, size_t count)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	int i;
++
++	hdr->major = 2;
++	hdr->minor = 2;
++	hdr->count = count;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	for (i = 0; i < count; i++) {
++		struct i2c_cmd_write *cmd = (struct i2c_cmd_write *)i2c_ctx.msg_cur;
++
++		cmd->length = block[i].length;
++		cmd->reg_low = block[i].reg & 0xff;
++		cmd->reg_high = block[i].reg >> 8;
++		memcpy(cmd->data, block[i].data, block[i].length);
++
++		i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++		hdr->length += sizeof(*cmd) + cmd->length;
++	}
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_begin_block(void)
++{
++	i2c_ctx.block_index = 0;
++}
++
++static void i2c_end_block(void)
++{
++	if (i2c_ctx.block_index > 0)
++		i2c_write_block(i2c_ctx.blocks, i2c_ctx.block_index);
++	i2c_ctx.block_index = -1;
++}
++
++static void i2c_write_data(u16 reg, u8 value[], size_t count)
++{
++	struct i2c_block *block;
++	bool new_block = i2c_ctx.block_index == -1;
++
++	if (new_block)
++		i2c_begin_block();
++
++	block = &i2c_ctx.blocks[i2c_ctx.block_index++];
++	block->reg = reg;
++	block->length = count;
++	memcpy(block->data, value, count);
++
++	if (new_block)
++		i2c_end_block();
++}
++
++static void i2c_write(u16 reg, u8 value)
++{
++	i2c_write_data(reg, &value, 1);
++}
++
++static void i2c_cmd_2_1(u16 reg, u8 unk)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 2;
++	hdr->minor = 1;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_2_1 *cmd = (struct i2c_cmd_2_1 *)i2c_ctx.msg_cur;
++	cmd->length = 1;
++	cmd->reg_low = reg & 0xff;
++	cmd->reg_high = reg >> 8;
++	cmd->data[0] = unk;
++	i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++	hdr->length += sizeof(*cmd) + cmd->length;
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_delay(u16 time)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 3;
++	hdr->minor = 1;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_delay *cmd = (struct i2c_cmd_delay *)i2c_ctx.msg_cur;
++	cmd->length = 0;
++	cmd->time_low = time & 0xff;
++	cmd->time_high = time >> 8;
++	cmd->unk_03 = 0;
++	i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++	hdr->length += sizeof(*cmd) + cmd->length;
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_mask(u16 reg, u8 value, u8 mask)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 2;
++	hdr->minor = 3;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_mask *cmd = (struct i2c_cmd_mask *)i2c_ctx.msg_cur;
++	cmd->length = 1;
++	cmd->reg_low = reg & 0xff;
++	cmd->reg_high = reg >> 8;
++	cmd->value = value;
++	cmd->mask[0] = mask;
++	i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++	hdr->length += sizeof(*cmd) + cmd->length;
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_waitset(u16 reg, u8 value)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 3;
++	hdr->minor = 2;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_waitset *cmd = (struct i2c_cmd_waitset *)i2c_ctx.msg_cur;
++	cmd->length = 0;
++	cmd->reg_low = reg & 0xff;
++	cmd->reg_high = reg >> 8;
++	cmd->value = value;
++	i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++	hdr->length += sizeof(*cmd) + cmd->length;
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_waitclear(u16 reg, u8 value)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 3;
++	hdr->minor = 3;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_waitclear *cmd = (struct i2c_cmd_waitclear *)i2c_ctx.msg_cur;
++	cmd->length = 0;
++	cmd->reg_low = reg & 0xff;
++	cmd->reg_high = reg >> 8;
++	cmd->value = value;
++	i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++	hdr->length += sizeof(*cmd) + cmd->length;
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_cmd_3_5(u16 reg, u8 value)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 3;
++	hdr->minor = 5;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_3_5 *cmd = (struct i2c_cmd_3_5 *)i2c_ctx.msg_cur;
++	cmd->length = 0;
++	cmd->reg_low = reg & 0xff;
++	cmd->reg_high = reg >> 8;
++	cmd->value = value;
++	i2c_ctx.msg_cur += sizeof(*cmd) + cmd->length;
++	hdr->length += sizeof(*cmd) + cmd->length;
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_cmd_5_3(u8 unk)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 5;
++	hdr->minor = 3;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_5_3 *cmd = (struct i2c_cmd_5_3 *)i2c_ctx.msg_cur;
++	cmd->value = unk;
++	i2c_ctx.msg_cur += sizeof(*cmd);
++	hdr->length += sizeof(*cmd);
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_cmd_5_4(u8 event)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 5;
++	hdr->minor = 4;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_5_4 *cmd = (struct i2c_cmd_5_4 *)i2c_ctx.msg_cur;
++	cmd->value = event;
++	i2c_ctx.msg_cur += sizeof(*cmd);
++	hdr->length += sizeof(*cmd);
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static void i2c_cmd_5_5(u8 event)
++{
++	struct i2c_cmd_hdr *hdr = (struct i2c_cmd_hdr *)i2c_ctx.msg_cur;
++	hdr->major = 5;
++	hdr->minor = 5;
++	hdr->count = 1;
++	hdr->length = sizeof(*hdr);
++	i2c_ctx.msg_cur += sizeof(*hdr);
++
++	struct i2c_cmd_5_5 *cmd = (struct i2c_cmd_5_5 *)i2c_ctx.msg_cur;
++	cmd->value = event;
++	i2c_ctx.msg_cur += sizeof(*cmd);
++	hdr->length += sizeof(*cmd);
++
++	i2c_ctx.msg_hdr->count++;
++}
++
++static int stopHdcpHw(void)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_GENERAL;
++	msg->msg_type = 0x1f;
++	msg->length = ICC_MSG_MIN_SIZE;
++
++	return icc_query(buf, buf);
++}
++
++static void sceDisableEncode(void)
++{
++	i2c_init(4);
++	i2c_mask(0x705f, 0x80, 0x80);
++	i2c_cmd_5_3(0x00);
++	i2c_mask(0x7021, 0x00, 0xf0);
++	i2c_cmd_2_1(0x7a88, 0xff);
++	i2c_waitclear(0x7a84, 0x01);
++	i2c_cmd_2_1(0x740a, 0xff);
++	i2c_waitclear(0x740a, 0xff);
++	i2c_mask(0x7419, 0x05, 0x07);
++	i2c_mask(0x7a8b, 0x00, 0x07);
++	i2c_delay(100);
++	i2c_exec();
++}
++
++static void initIsrForFlava3(void)
++{
++	i2c_init(0);
++	i2c_begin_block();
++	i2c_write(0x705f, 0x12);
++	i2c_write(0x6004, 0x80);
++	i2c_write(0x6020, 0x00);
++	i2c_write(0x7007, 0xff);
++	i2c_write(0x100c, 0x01);
++	i2c_write(0x6008, 0xc0);
++	i2c_write(0x6207, 0x00);
++	i2c_write(0x621b, 0x00);
++	i2c_write_data(0x6080, (u8[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 6);
++	i2c_write_data(0x6090, (u8[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 8);
++	i2c_write_data(0x10e7, (u8[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 8);
++	i2c_write_data(0x10e9, (u8[]){0xff, 0xff}, 2);
++	i2c_write_data(0x10f0, (u8[]){0xff, 0x07, 0x00, 0x0f, 0x00, 0x56, 0x00, 0x00, 0xd0, 0x00}, 10);
++	i2c_write(0x7018, (tmds_polarity == 1) << 1);
++	i2c_end_block();
++	if (tmds_ch_swap == 1) {
++		i2c_mask(0x701a, 0xb1, 0xff);
++	}
++	i2c_exec();
++}
++
++static void initDpForFlava3(void)
++{
++	i2c_init(0);
++	i2c_begin_block();
++	i2c_write(0x6a03, 0x04);
++	i2c_write(0x60a2, 0xf1);
++	i2c_write(0x60bf, 0x03);
++	i2c_write(0x60c0, 0xef);
++	i2c_write(0x60c3, 0x4d);
++	i2c_write(0x60c7, 0x85);
++	i2c_write(0x60bf, 0x04);
++	i2c_write(0x60c7, 0x84);
++	if (dp_polarity != 0xff) {
++		i2c_write(0x600e, dp_polarity << 4);
++	}
++	if (dp_ch_swap != 0xff) {
++		i2c_write(0x600b, dp_ch_swap);
++	}
++	i2c_write_data(0x6220, (u8[]){0x40, 0x00, 0x80, 0x00, 0x00, 0x01, 0x02}, 7);
++	i2c_write_data(0x6028, (u8[]){0x01, 0x02}, 2);
++	i2c_write_data(0x6058, (u8[]){0x01, 0x02, 0x03, 0x04}, 4);
++	i2c_write(0x62af, 0x01);
++	i2c_write(0x6207, 0x00);
++	i2c_write(0x621b, 0x00);
++	i2c_write(0x60e0, 0x1e);
++	i2c_write(0x603c, 0x04);
++	i2c_write(0x100e, 0x10);
++	i2c_end_block();
++	i2c_delay(2);
++	i2c_write(0x6005, 0x01);
++	i2c_delay(2);
++	i2c_write(0x6008, 0x00);
++	i2c_exec();
++}
++
++static void initVerde(void)
++{
++	i2c_init(0);
++	i2c_mask(0x105, 0x00, 0x03);
++	i2c_mask(0x104, 0x00, 0x02);
++	i2c_cmd_2_1(0x400, 0x00);
++	i2c_cmd_2_1(0x3261, 0x02);
++	i2c_begin_block();
++	i2c_write(0x11, 0x03);
++	i2c_write(0x13, 0xff);
++	i2c_write_data(0x8000, (u8[]){0x00, 0x01, 0x07, 0x00}, 4);
++	i2c_write(0x108, 0x80);
++	i2c_write(0x9000, 0x01);
++	i2c_end_block();
++	i2c_cmd_5_3(0x00);
++	i2c_exec();
++}
++
++void sceHdmiInitVideoConfig(void)
++{
++	stopHdcpHw();
++	if (hdmi_ic_type == HDMI_IC_TYPE_FLAVA3) {
++		sceDisableEncode();
++		initIsrForFlava3();
++		initDpForFlava3();
++	} else {
++		initVerde();
++	}
++}
++EXPORT_SYMBOL(sceHdmiInitVideoConfig);
++
++static void configParamFlava3Pre(void)
++{
++	i2c_init(1);
++	i2c_begin_block();
++	i2c_write_data(0x6224, (u8[]){0x00, 0x01}, 2);
++	i2c_write_data(0x1047, (u8[]){0x00}, 1);
++	i2c_write_data(0x1050, (u8[]){0x00, 0x00, 0x00, 0x00}, 4);
++	i2c_write(0x7215, 0x00);
++	i2c_write(0x7077, 0x00);
++	i2c_write(0x7079, 0x80);
++	i2c_end_block();
++	i2c_exec();
++}
++
++static void configLinkTrainingFlava3(void)
++{
++	i2c_init(1);
++	i2c_begin_block();
++	i2c_write_data(0x600c, (u8[]){0x01, 0x00}, 2);
++	i2c_write_data(0x6c00, (u8[]){0x1e, 0x84, 0x00}, 3);
++	i2c_end_block();
++	i2c_mask(0x6005, 0x01, 0x01);
++	i2c_delay(2);
++	i2c_mask(0x6006, 0x04, 0x04);
++	i2c_delay(2);
++	i2c_write(0x6a03, 0x47);
++	i2c_delay(10);
++	i2c_waitset(0x60f8, 0xff);
++	i2c_waitset(0x60f9, 0x01);
++	i2c_write(0x6a01, 0x4d);
++	i2c_waitset(0x60f9, 0x1a);
++	i2c_waitset(0x6083, 0x02);
++	i2c_exec();
++}
++
++static void initHdmiPhyForFlava3_1st(void)
++{
++	i2c_init(0);
++	i2c_begin_block();
++	i2c_write(0x7022, 0x03);
++	i2c_write(0x7030, 0x40);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x54}, 2);
++	i2c_write(0x7030, 0x41);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x54}, 2);
++	i2c_write(0x7030, 0x42);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x34}, 2);
++	i2c_write(0x7030, 0x43);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x34}, 2);
++	i2c_write(0x7030, 0x04);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x71}, 2);
++	i2c_write(0x7030, 0x14);
++	i2c_write(0x7025, 0x71);
++	i2c_write(0x7030, 0x24);
++	i2c_write(0x7025, 0x70);
++	i2c_write(0x7030, 0x34);
++	i2c_write(0x7025, 0x77);
++	i2c_write(0x7030, 0x05);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x71}, 2);
++	i2c_write(0x7030, 0x15);
++	i2c_write(0x7025, 0x71);
++	i2c_write(0x7030, 0x25);
++	i2c_write(0x7025, 0x70);
++	i2c_write(0x7030, 0x35);
++	i2c_write(0x7025, 0x77);
++	i2c_write(0x7030, 0x06);
++	i2c_write_data(0x7024, (u8[]){0x04, 0x71}, 2);
++	i2c_write(0x7030, 0x16);
++	i2c_write(0x7025, 0x70);
++	i2c_write(0x7030, 0x26);
++	i2c_write(0x7025, 0x70);
++	i2c_write(0x7030, 0x36);
++	i2c_write(0x7025, 0x77);
++	i2c_end_block();
++	i2c_exec();
++}
++
++static void initHdmiPhyForFlava3_2nd(void)
++{
++	i2c_init(0);
++	i2c_begin_block();
++	i2c_write(0x7030, 0x47);
++	i2c_write(0x7024, 0x04);
++	i2c_write(0x7025, 0x37);
++	i2c_write(0x7027, 0x17);
++	i2c_write(0x7030, 0x37);
++	i2c_write(0x7025, 0x71);
++	i2c_write(0x7027, 0x14);
++	i2c_write(0x7030, 0x48);
++	i2c_write(0x7024, 0x04);
++	i2c_write(0x7025, 0x37);
++	i2c_write(0x7027, 0x17);
++	i2c_write(0x7030, 0x38);
++	i2c_write(0x7025, 0x77);
++	i2c_write(0x7027, 0x14);
++	i2c_write(0x7030, 0x49);
++	i2c_write(0x7024, 0x01);
++	i2c_write(0x7030, 0x19);
++	i2c_write(0x7026, 0xcc);
++	i2c_write(0x7030, 0x29);
++	i2c_write(0x7026, 0xdd);
++	i2c_write(0x7030, 0x39);
++	i2c_write(0x7026, 0xef);
++	i2c_write(0x7030, 0x4a);
++	i2c_write(0x7024, 0x01);
++	i2c_write(0x7030, 0x1a);
++	i2c_write(0x7026, 0xcc);
++	i2c_write(0x7030, 0x2a);
++	i2c_write(0x7026, 0xdd);
++	i2c_write(0x7030, 0x3a);
++	i2c_write(0x7026, 0xef);
++	i2c_write(0x7030, 0x4b);
++	i2c_write(0x7024, 0x01);
++	i2c_write(0x7030, 0x1b);
++	i2c_write(0x7026, 0xcc);
++	i2c_write(0x7030, 0x2b);
++	i2c_write(0x7026, 0xdd);
++	i2c_write(0x7030, 0x3b);
++	i2c_write(0x7026, 0xef);
++	i2c_end_block();
++	i2c_exec();
++}
++
++static void mask_7203(void)
++{
++	i2c_init(1);
++	i2c_mask(0x7203, 0x00, 0x80);
++	i2c_exec();
++}
++
++static void setHdmiBasicVideoConfigFlava3(int w, int h, int hz)
++{
++	i2c_init(1);
++	i2c_mask(0x7021, 0x00, 0xf0);
++	i2c_delay(500);
++	i2c_begin_block();
++	i2c_write(0x100c, 0x01);
++	i2c_write_data(0x68a0, (u8[]){0x96, 0x04}, 2);
++	i2c_write(0x7005, 0x80);
++	i2c_write(0x7019, 0x00);
++	i2c_write(0x100c, 0x01);
++	i2c_write(0x7005, 0x80);
++	i2c_write(0x7009, 0x00);
++	i2c_write(0x7040, 0x42);
++	i2c_write(0x7225, 0x28);
++	if (h == 1080) {
++		i2c_write_data(0x7227, (u8[]){0x10, 0x00}, 2);
++		i2c_write_data(0x7070, (u8[]){0x10, 0x10, 0x00, 0x00, 0x00, 0x00}, 6);
++	} else if (h == 1440) {
++		i2c_write_data(0x7227, (u8[]){0x04, 0x00}, 2);
++		i2c_write_data(0x7070, (u8[]){0x00, 0x00, 0x00, 0x00, 0x00, 0xfb}, 6);
++	} else if (h == 2160) {
++		i2c_write_data(0x7227, (u8[]){0x06, 0x00}, 2);
++		i2c_write_data(0x7070, (u8[]){0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 6);
++	}
++	i2c_write(0x70c0, 0xdc);
++	i2c_write(0x621b, 0x00);
++	i2c_write(0x629a, 0x00);
++	i2c_write_data(0x70c4, (u8[]){0x08, 0x08}, 2);
++	i2c_write(0x70c2, 0x00);
++	i2c_write(0x70fe, 0x02);
++	i2c_write(0x70c3, 0x00);
++	i2c_write(0x7018, (tmds_polarity == 1) << 1);
++	if (tmds_ch_swap == 1) {
++		i2c_end_block();
++		i2c_mask(0x701a, 0xb1, 0xff);
++		i2c_begin_block();
++	}
++	i2c_write(0x10e7, 0xff);
++	i2c_write(0x7202, 0x20);
++	if (h == 2160) {
++		i2c_write(0x7072, 0x01);
++		i2c_write(0x7074, 0x07);
++		i2c_write(0x7206, 0x80);
++		i2c_write(0x7203, 0x60);
++		i2c_write(0x7011, 0xff);
++	} else {
++		i2c_write(0x7203, 0x60);
++		i2c_write(0x7011, 0xd5);
++	}
++	i2c_end_block();
++	i2c_waitclear(0x7011, 0xff);
++	i2c_exec();
++}
++
++static void setVideoAdditionalConfigFlava3(int w, int h, int hz)
++{
++	i2c_init(1);
++	i2c_waitset(0x10e7, 0x80);
++	if (h == 2160) {
++		i2c_mask(0x7227, 0x61, 0xff);
++	}
++	// i2c_cmd_2_1(0x7231, 0x00);
++	// i2c_cmd_2_1(0x7232, 0x00);
++	i2c_mask(0x7226, 0x80, 0x80);
++	i2c_mask(0x7228, 0x30, 0x30);
++	i2c_write(0x7204, 0x40);
++	i2c_waitclear(0x7204, 0x40);
++	i2c_delay(10);
++	i2c_begin_block();
++	if (h == 2160) {
++		i2c_write(0x7019, 0x01);
++	} else {
++		i2c_write(0x7019, 0x00);
++	}
++	i2c_write(0x7419, 0x05);
++	i2c_write(0x740a, 0xff);
++	i2c_end_block();
++	i2c_waitclear(0x740a, 0xff);
++	i2c_begin_block();
++	i2c_write(0x7404, 0x00);
++	i2c_write(0x7a88, 0xff);
++	i2c_end_block();
++	i2c_waitclear(0x7a84, 0x01);
++	i2c_begin_block();
++	i2c_write(0x7a8b, 0x05);
++	if (h == 2160) {
++		i2c_write(0x7c00, 0x03);
++		i2c_write_data(0x7a80, (u8[]){0xa8, 0x20, 0x00, 0x80}, 4);
++	}
++	i2c_end_block();
++	if (h == 2160) {
++		i2c_waitclear(0x7a84, 0x01);
++	}
++	i2c_begin_block();
++	i2c_write(0x7021, 0xff);
++	i2c_write(0x700a, 0x02);
++	i2c_write(0x705f, 0x80);
++	i2c_end_block();
++	i2c_delay(500);
++	i2c_write(0x7a8b, 0x00);
++	i2c_cmd_5_3(0x01);
++	i2c_exec();
++}
++
++static void setHdmiVideoConfigFlava3(int w, int h, int hz)
++{
++	configParamFlava3Pre();
++	configLinkTrainingFlava3();
++	setHdmiBasicVideoConfigFlava3(w, h, hz);
++	initHdmiPhyForFlava3_1st();
++	initHdmiPhyForFlava3_2nd();
++	mask_7203();
++	setVideoAdditionalConfigFlava3(w, h, hz);
++}
++
++static void linkConfigVerde(int w, int h, int hz)
++{
++	i2c_init(0);
++	i2c_mask(0x105, 0x00, 0x40);
++	if (h == 1440) {
++		i2c_cmd_2_1(0x400, 0x03);
++	}
++	i2c_begin_block();
++	i2c_write_data(0x9003, (u8[]){0x1e, 0x04, 0x01, 0x01, 0x00, 0x00, 0x00}, 7);
++	i2c_write(0x4002, 0x03);
++	i2c_end_block();
++	i2c_exec();
++}
++
++static void configDpLinkTrainingVerde(void)
++{
++	i2c_init(0);
++	i2c_cmd_2_1(0x9002, 0x01);
++	i2c_waitset(0x4001, 0x02);
++	i2c_cmd_2_1(0x11, 0x01);
++	i2c_exec();
++}
++
++static void setTmdsConfigVerde(void)
++{
++	i2c_init(0);
++	i2c_cmd_2_1(0x9200, 0x00);
++	i2c_begin_block();
++	i2c_write(0x9800, 0x00);
++	i2c_write(0x33b3, 0x1a);
++	i2c_write(0x9831, 0x80);
++	i2c_write_data(0x9810, (u8[]){0x00, 0x79, 0x00, 0x02, 0x0b, 0x00, 0x00}, 7);
++	i2c_end_block();
++	i2c_waitclear(0x9830, 0x80);
++	i2c_cmd_2_1(0x9830, 0x80);
++	i2c_waitclear(0x9830, 0x80);
++	i2c_cmd_2_1(0x9830, 0x81);
++	i2c_waitclear(0x9830, 0x80);
++	i2c_waitclear(0x108, 0x10);
++	i2c_mask(0x108, 0x11, 0x17);
++	i2c_waitset(0x13, 0x40);
++	i2c_cmd_2_1(0x13, 0x40);
++	i2c_cmd_3_5(0x4001, 0x03);
++	i2c_cmd_2_1(0x11, 0x01);
++	i2c_exec();
++}
++
++static void setHdmiBasicVideoConfigVerde(int w, int h, int hz)
++{
++	i2c_init(0);
++	i2c_begin_block();
++	if (h == 1080) {
++		i2c_write_data(0x3058, (u8[]){0x02, 0x0d, 0xef, 0x00, 0x28, 0x08, 0x10, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 18);
++	} else if (h == 1440) {
++		i2c_write_data(0x3058, (u8[]){0x02, 0x0d, 0xff, 0x00, 0x28, 0x08, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 18);
++	} else if (h == 2160) {
++		i2c_write_data(0x3058, (u8[]){0x02, 0x0d, 0x9e, 0x00, 0x28, 0x08, 0x61, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 18);
++	}
++	i2c_write_data(0x31d0, (u8[]){0x01, 0x19, 0x5f, 0x53, 0x43, 0x45, 0x49, 0x00, 0x00, 0x00, 0x00, 0x50, 0x53, 0x35, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08}, 28);
++	i2c_end_block();
++	i2c_begin_block();
++	i2c_write_data(0x3033, (u8[]){0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 9);
++	i2c_write_data(0x307a, (u8[]){0x01, 0x0a, 0x70, 0x01, 0x00, 0x00, 0x00, 0x00}, 8);
++	i2c_write_data(0x3000, (u8[]){0x56, 0xaa, 0x00, 0x24, 0x00, 0xa8, 0x00, 0x00, 0x08, 0x80}, 10);
++	i2c_end_block();
++	i2c_cmd_2_1(0x300a, 0x01);
++	i2c_waitclear(0x300c, 0xf3);
++	i2c_waitclear(0x300d, 0xff);
++	i2c_waitclear(0x300e, 0xff);
++	i2c_waitclear(0x300f, 0xff);
++	i2c_waitclear(0x3010, 0xff);
++	i2c_waitclear(0x3011, 0xff);
++	i2c_waitset(0x13, 0x80);
++	i2c_cmd_2_1(0x13, 0x80);
++	i2c_mask(0x105, 0x01, 0x03);
++	i2c_delay(700);
++	i2c_cmd_5_3(0x01);
++	i2c_exec();
++}
++
++static void setHdmiVideoConfigVerde(int w, int h, int hz)
++{
++	linkConfigVerde(w, h, hz);
++	configDpLinkTrainingVerde();
++	setTmdsConfigVerde();
++	setHdmiBasicVideoConfigVerde(w, h, hz);
++}
++
++static void setHdmiAudioConfigBasic(void)
++{
++	i2c_init(2);
++	i2c_begin_block();
++	i2c_write(0x62a0, 0x06);
++	i2c_write(0x62a7, 0x13);
++	i2c_write(0x62ac, 0x82);
++	i2c_write(0x62cb, 0x02);
++	i2c_write(0x62cb, 0x03);
++	i2c_write(0x62cb, 0x00);
++	i2c_write(0x70ad, 0x00);
++	i2c_write(0x70af, 0x07);
++	i2c_write(0x70a9, 0x5e);
++	i2c_end_block();
++	i2c_mask(0x70af, 0x06, 0x06);
++	i2c_mask(0x70b3, 0x02, 0x0f);
++	i2c_mask(0x70ae, 0x80, 0xe0);
++	i2c_mask(0x70ae, 0x05, 0x07);
++	i2c_mask(0x70ac, 0x01, 0x21);
++	i2c_mask(0x70ab, 0x81, 0x89);
++	i2c_mask(0x70a9, 0x08, 0x08);
++	i2c_exec();
++}
++
++static void setAudioConfigAdditional(void)
++{
++	i2c_init(2);
++	i2c_mask(0x70b0, 0x00, 0xff);
++	i2c_mask(0x70b1, 0x79, 0xff);
++	i2c_mask(0x70b2, 0x00, 0xff);
++	i2c_mask(0x70b3, 0x02, 0xff);
++	i2c_mask(0x70b4, 0x0b, 0x0f);
++	i2c_mask(0x70b5, 0x00, 0xff);
++	i2c_mask(0x70b6, 0x00, 0xff);
++	i2c_begin_block();
++	i2c_write(0x10e7, 0xff);
++	i2c_write(0x7011, 0xa2);
++	i2c_end_block();
++	i2c_waitset(0x10e7, 0xa2);
++	i2c_mask(0x7267, 0x0b, 0xff);
++	i2c_write(0x7204, 0x10);
++	i2c_waitclear(0x7204, 0x10);
++	i2c_write(0x10e7, 0xff);
++	i2c_mask(0x7203, 0x10, 0x10);
++	i2c_delay(30);
++	i2c_write(0x70a8, 0xc0);
++	i2c_exec();
++}
++
++static void sceHdmiSetAudioConfigFlava3(void)
++{
++	setHdmiAudioConfigBasic();
++	setAudioConfigAdditional();
++}
++
++static void setAudioConfigForVerde(void)
++{
++	i2c_init(2);
++	i2c_waitclear(0x102, 0x80);
++	i2c_cmd_2_1(0xf1, 0x01);
++	i2c_waitset(0xf2, 0x01);
++	i2c_waitset(0x16, 0x08);
++	i2c_cmd_2_1(0x16, 0x08);
++	i2c_begin_block();
++	i2c_write(0x9800, 0x00);
++	i2c_write(0x33b3, 0x1a);
++	i2c_write(0x9831, 0x80);
++	i2c_write_data(0x9810, (u8[]){0x00, 0x79, 0x00, 0x02, 0x0b, 0x00, 0x00}, 7);
++	i2c_end_block();
++	i2c_waitclear(0x9830, 0x80);
++	i2c_cmd_2_1(0x9830, 0x80);
++	i2c_waitclear(0x9830, 0x80);
++	i2c_cmd_2_1(0x9830, 0x81);
++	i2c_waitclear(0x9830, 0x80);
++	i2c_waitclear(0x108, 0x10);
++	i2c_mask(0x108, 0x10, 0x10);
++	i2c_waitclear(0x108, 0x10);
++	i2c_write_data(0x307a, (u8[]){0x01, 0x0a, 0x70, 0x01, 0x00, 0x00, 0x00, 0x00}, 8);
++	i2c_mask(0x3000, 0x40, 0xc0);
++	i2c_mask(0x3005, 0x80, 0xc0);
++	i2c_cmd_2_1(0x300a, 0x01);
++	i2c_waitset(0x13, 0x80);
++	i2c_cmd_2_1(0x13, 0x80);
++	i2c_exec();
++}
++
++static void sceHdmiSetAudioConfigVerde(void)
++{
++	setAudioConfigForVerde();
++}
++
++void sceHdmiSetVideoConfig(int w, int h, int hz)
++{
++	if (hdmi_ic_type == HDMI_IC_TYPE_FLAVA3) {
++		setHdmiVideoConfigFlava3(w, h, hz);
++	} else {
++		setHdmiVideoConfigVerde(w, h, hz);
++	}
++}
++EXPORT_SYMBOL(sceHdmiSetVideoConfig);
++
++void sceHdmiDeviceSetVideoMute(int mute)
++{
++	i2c_init(4);
++	if (hdmi_ic_type == HDMI_IC_TYPE_FLAVA3) {
++		i2c_write(0x705f, (mute == 1) << 7);
++	} else {
++		i2c_mask(0x105, mute != 1, 0x03);
++	}
++	i2c_exec();
++}
++EXPORT_SYMBOL(sceHdmiDeviceSetVideoMute);
++
++void sceHdmiSetAudioConfig(void)
++{
++	if (hdmi_ic_type == HDMI_IC_TYPE_FLAVA3) {
++		sceHdmiSetAudioConfigFlava3();
++	} else {
++		sceHdmiSetAudioConfigVerde();
++	}
++}
++EXPORT_SYMBOL(sceHdmiSetAudioConfig);
++
++void sceHdmiSetAudioMute(int mute)
++{
++	i2c_init(4);
++	if (hdmi_ic_type == HDMI_IC_TYPE_FLAVA3) {
++		i2c_mask(0x70a8, (mute == 1) << 2, 0x04);
++	} else {
++		i2c_cmd_5_5(mute == 1);
++	}
++	i2c_exec();
++}
++EXPORT_SYMBOL(sceHdmiSetAudioMute);
++
++void sceControlHdmiEvent(u8 enable)
++{
++	i2c_init(4);
++	i2c_cmd_5_4(enable);
++	i2c_exec();
++}
++EXPORT_SYMBOL(sceControlHdmiEvent);
++
++int getHdmiConfiguration(void)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++	int ret;
++
++	msg->service_id = ICC_SERVICE_ID_GENERAL;
++	msg->msg_type = 0x16;
++	msg->length = ICC_MSG_MIN_SIZE;
++	msg->data[0] = 0x10;
++
++	ret = icc_query(buf, buf);
++	if (ret)
++		return ret;
++
++	hdmi_ic_type = (msg->data[0x3] == 1) | 2;
++	tmds_polarity = msg->data[0x4] == 1;
++	tmds_ch_swap = msg->data[0x5] == 1;
++	dp_polarity = msg->data[0x6];
++	dp_ch_swap = msg->data[0x7];
++
++	pr_info("HDMI IC Type [%s]\n", hdmi_ic_type == HDMI_IC_TYPE_FLAVA3 ? "FLAVA3" : "VERDE");
++	pr_info("TMDS Polarity [%s]\n", tmds_polarity ? "Reverse" : "Normal");
++	pr_info("TMDS Ch Swap [%s]\n", tmds_ch_swap ? "Swap" : "Normal");
++	pr_info("DP Polarity [0x%x]\n", dp_polarity);
++	pr_info("DP Ch Swap [0x%x]\n", dp_ch_swap);
++
++	return 0;
++}
++EXPORT_SYMBOL(getHdmiConfiguration);
++
++const struct drm_edid *real_edid = NULL;
++
++static void fix_edid(u8 *edid)
++{
++	u32 sum = 0;
++	int i;
++
++	// For some reason, PS5 sets 0x01.
++	edid[0] = 0x00;
++
++	for (i = 0; i < 0x7f; i++)
++		sum += edid[i];
++
++	edid[0x7f] = -sum & 0xff;
++}
++
++void hdmi_notification_handler(struct icc_msg *msg)
++{
++		if (msg->data[1] == 0x02) {
++			fix_edid(&msg->data[4]);
++			real_edid = drm_edid_alloc(&msg->data[4], *(u16 *)&msg->data[2]);
++			pr_info(KERN_INFO "got real edid\n");
++		}
++}
++EXPORT_SYMBOL(hdmi_notification_handler);
+diff --git a/drivers/ps5/spcie.c b/drivers/ps5/spcie.c
+new file mode 100644
+index 000000000000..ad25df4e063a
+--- /dev/null
++++ b/drivers/ps5/spcie.c
+@@ -0,0 +1,523 @@
++#include <linux/module.h>
++#include <linux/pci.h>
++#include <linux/ps5.h>
++
++#define PCI_DEVICE_ID_SPCIE	0x9107
++#define SPCIE_SUBFUNC_ICC	12
++#define NUM_IRQS		16
++
++#define ICC_QUERY_OFFSET	0
++#define ICC_REPLY_OFFSET	0x800
++
++#define ICC_DOORBELL_OFFSET	0x108000
++
++#define ICC_REG_SOW		0x7f0
++#define ICC_REG_SOR		0x7f4
++#define ICC_REG_EMW		0xff0
++#define ICC_REG_EMR		0xff4
++
++#define ICC_REG_DOORBELL	0x04
++#define ICC_REG_INTR_STATUS	0x14
++#define ICC_REG_INTR_MASK	0x24
++
++#define ICC_SEND		0x01
++#define ICC_ACK			0x02
++
++#define ICC_MSG_TYPE_REPLY	0x4000
++#define ICC_MSG_TYPE_NOTIF	0x8000
++
++#define ICC_TIMEOUT_MSECS	12000
++
++struct spcie_dev;
++
++struct spcie_icc_dev {
++	struct pci_dev *pdev;
++	struct spcie_dev *sdev;
++	struct mutex lock;
++	wait_queue_head_t wq;
++	void __iomem *icc_doorbell_base;
++	void __iomem *icc_base;
++	u16 icc_send_xtn_id;
++	u8 notification[ICC_MSG_MAX_SIZE];
++	u16 notification_length;
++	u8 reply[ICC_MSG_MAX_SIZE];
++	u16 reply_length;
++	bool reply_ready;
++};
++
++struct spcie_dev {
++	struct pci_dev *pdev;
++	void __iomem *bar2;
++	void __iomem *bar4;
++	struct spcie_icc_dev *icc_dev;
++};
++
++static struct spcie_icc_dev *icc_dev;
++
++static u8 indicator_white_dim[] = {
++	0x03, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x11,
++	0x01, 0x00, 0x20, 0x00, 0x01, 0x00, 0x12, 0x01, 0x00, 0x00, 0x00, 0x02,
++	0x00
++};
++
++static u8 indicator_white_medium[] = {
++	0x03, 0x00, 0x00, 0x00, 0x10, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x11,
++	0x01, 0x00, 0x5F, 0x00, 0x01, 0x00, 0x12, 0x01, 0x00, 0x00, 0x00, 0x02,
++	0x00
++};
++
++static u8 indicator_white_bright[] = {
++	0x03, 0x00, 0x00, 0x00, 0x10, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x11,
++	0x01, 0x00, 0xFF, 0x00, 0x01, 0x00, 0x12, 0x01, 0x00, 0x00, 0x00, 0x02,
++	0x00
++};
++
++static u16 icc_checksum(struct icc_msg *msg)
++{
++	u16 checksum = 0;
++	for (u16 i = 0; i < msg->length; i++)
++		checksum += ((u8 *)msg)[i];
++	return checksum;
++}
++
++static int icc_send(u8 *query)
++{
++	struct icc_msg *msg;
++
++	msg = (struct icc_msg *)query;
++	if (msg->length < ICC_MSG_MIN_SIZE)
++		msg->length = ICC_MSG_MIN_SIZE;
++	msg->magic = 0x42;
++	msg->unk_04 = 3;
++	msg->id = icc_dev->icc_send_xtn_id++;
++	msg->checksum = icc_checksum(msg);
++
++	writew(0, icc_dev->icc_base + ICC_REG_SOR);
++
++	for (u16 i = 0; i < msg->length; i++)
++		writeb(query[i], icc_dev->icc_base + ICC_QUERY_OFFSET + i);
++
++	writew(1, icc_dev->icc_base + ICC_REG_SOW);
++
++	writel(ICC_SEND, icc_dev->icc_doorbell_base + ICC_REG_DOORBELL);
++
++	return 0;
++}
++
++int icc_query(u8 *query, u8 *reply)
++{
++	struct icc_msg *msg;
++	u16 checksum, expected;
++	int ret;
++
++	mutex_lock(&icc_dev->lock);
++
++	icc_dev->reply_ready = false;
++
++	icc_send(query);
++
++	ret = wait_event_interruptible_timeout(icc_dev->wq, icc_dev->reply_ready,
++		msecs_to_jiffies(ICC_TIMEOUT_MSECS));
++	if (ret == 0) {
++		dev_err(&icc_dev->pdev->dev, "timeout\n");
++		mutex_unlock(&icc_dev->lock);
++		return -ETIMEDOUT;
++	} else if (ret < 0) {
++		dev_err(&icc_dev->pdev->dev, "interrupted\n");
++		mutex_unlock(&icc_dev->lock);
++		return -ETIMEDOUT;
++	}
++
++	memcpy(reply, icc_dev->reply, icc_dev->reply_length);
++
++	msg = (struct icc_msg *)reply;
++	expected = msg->checksum;
++	msg->checksum = 0;
++	checksum = icc_checksum(msg);
++	if (checksum != expected) {
++		dev_err(&icc_dev->pdev->dev, "checksum mismatch\n");
++		mutex_unlock(&icc_dev->lock);
++		return -EINVAL;
++	}
++
++	mutex_unlock(&icc_dev->lock);
++	return 0;
++}
++EXPORT_SYMBOL(icc_query);
++
++int icc_usbc_set_pdcon_op_mode(u8 PortId, u8 OpMode)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_USBC;
++	msg->msg_type = 0x10;
++	msg->length = ICC_MSG_MIN_SIZE;
++	msg->data[0] = PortId;
++	msg->data[1] = OpMode;
++
++	return icc_query(buf, buf);
++}
++EXPORT_SYMBOL(icc_usbc_set_pdcon_op_mode);
++
++int icc_configuration_set_cpu_info_bit(u8 *bit)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_GENERAL;
++	msg->msg_type = 0x10;
++	msg->length = ICC_MSG_MIN_SIZE;
++	msg->data[0] = bit[1];
++	msg->data[1] = bit[0];
++
++	return icc_query(buf, buf);
++}
++EXPORT_SYMBOL(icc_configuration_set_cpu_info_bit);
++
++int icc_configuration_clear_cpu_info_bit(void)
++{
++	u8 bit[2];
++	int ret;
++
++	bit[0] = 0;
++	bit[1] = 0;
++	ret = icc_configuration_set_cpu_info_bit(bit);
++	if (ret)
++		return ret;
++
++	bit[0] = 0;
++	bit[1] = 1;
++	ret = icc_configuration_set_cpu_info_bit(bit);
++	if (ret)
++		return ret;
++
++	return 0;
++}
++EXPORT_SYMBOL(icc_configuration_clear_cpu_info_bit);
++
++__noreturn void icc_power_shutdown(void)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	icc_configuration_clear_cpu_info_bit();
++
++	msg->service_id = ICC_SERVICE_ID_POWER;
++	msg->msg_type = 1;
++	msg->length = ICC_MSG_MIN_SIZE;
++	msg->data[0] = 0;
++	msg->data[1] = 0; // shutdown
++	msg->data[2] = 2; // depth
++	msg->data[3] = 0; // cause
++	msg->data[4] = 2; // hand
++	*(u32 *)&msg->data[5] = 0;
++
++	icc_query(buf, buf);
++	while (1);
++}
++EXPORT_SYMBOL(icc_power_shutdown);
++
++__noreturn void icc_power_reboot(void)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	icc_configuration_clear_cpu_info_bit();
++
++	msg->service_id = ICC_SERVICE_ID_POWER;
++	msg->msg_type = 1;
++	msg->length = ICC_MSG_MIN_SIZE;
++	msg->data[0] = 0;
++	msg->data[1] = 1; // reboot
++	msg->data[2] = 2; // depth
++	msg->data[3] = 0; // cause
++	msg->data[4] = 2; // hand
++	*(u32 *)&msg->data[5] = 0;
++
++	icc_query(buf, buf);
++	while (1);
++}
++EXPORT_SYMBOL(icc_power_reboot);
++
++int icc_button_enable_notification(u8 type, u8 enable)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_BUTTON;
++	msg->msg_type = 1;
++	msg->length = 0x20;
++	msg->data[0] = type;
++	msg->data[1] = enable;
++
++	return icc_query(buf, buf);
++}
++EXPORT_SYMBOL(icc_button_enable_notification);
++
++int icc_button_enable_all_notifications(u8 enable)
++{
++	int ret;
++
++	// power button
++	ret = icc_button_enable_notification(0, enable);
++	if (ret)
++		return ret;
++
++	// eject button
++	ret = icc_button_enable_notification(1, enable);
++	if (ret)
++		return ret;
++
++	// reset button
++	ret = icc_button_enable_notification(2, enable);
++	if (ret)
++		return ret;
++
++	return 0;
++}
++EXPORT_SYMBOL(icc_button_enable_all_notifications);
++
++int icc_thermal_enable_notification(u8 enable)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_THERMAL;
++	msg->msg_type = 2;
++	msg->length = 0x20;
++	msg->data[0] = enable;
++
++	return icc_query(buf, buf);
++}
++EXPORT_SYMBOL(icc_thermal_enable_notification);
++
++int icc_indicator_set_led(u8 setting[], size_t setting_size)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_INDICATOR;
++	msg->msg_type = 0x20;
++	msg->length = sizeof(*msg) + setting_size;
++	memcpy(msg->data, setting, setting_size);
++
++	return icc_query(buf, buf);
++}
++EXPORT_SYMBOL(icc_indicator_set_led);
++
++int icc_indicator_set_led_white(u8 level)
++{
++	switch (level) {
++	case 0:
++		return icc_indicator_set_led(indicator_white_dim, sizeof(indicator_white_dim));
++	case 1:
++		return icc_indicator_set_led(indicator_white_medium, sizeof(indicator_white_medium));
++	case 2:
++		return icc_indicator_set_led(indicator_white_bright, sizeof(indicator_white_bright));
++	default:
++		return -EINVAL;
++	}
++}
++EXPORT_SYMBOL(icc_indicator_set_led_white);
++
++int icc_fan_change_servo_pattern(u8 pattern)
++{
++	u8 buf[ICC_MSG_MAX_SIZE] = {};
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	msg->service_id = ICC_SERVICE_ID_FAN;
++	msg->msg_type = 0xB;
++	msg->length = 0x20;
++	msg->data[0] = pattern;
++	msg->data[1] = pattern;
++	msg->data[2] = pattern;
++	msg->data[3] = pattern;
++
++	return icc_query(buf, buf);
++}
++EXPORT_SYMBOL(icc_fan_change_servo_pattern);
++
++static int icc_notification_handler(u8 service_id, u8 *buf)
++{
++	struct icc_msg *msg = (struct icc_msg *)buf;
++
++	if (service_id == ICC_SERVICE_ID_HDMI) {
++		hdmi_notification_handler(msg);
++	} else {
++		printk("service id: %x\n", service_id);
++		print_hex_dump(KERN_INFO, "event: ", DUMP_PREFIX_OFFSET, 16, 1,
++			msg->data, msg->length - sizeof(*msg), true);
++	}
++
++	return 0;
++}
++
++static irqreturn_t icc_interrupt(int irq, void *dev)
++{
++	struct spcie_icc_dev *icc_dev = dev;
++	struct icc_msg *msg;
++	u32 intr_status;
++
++	while (1) {
++		intr_status = readl(icc_dev->icc_doorbell_base + ICC_REG_INTR_STATUS);
++		if (!intr_status)
++			break;
++
++		// Ack the interrupt.
++		writel(intr_status, icc_dev->icc_doorbell_base + ICC_REG_INTR_STATUS);
++
++		if (intr_status & ICC_SEND) {
++			msg = (struct icc_msg *)(icc_dev->icc_base + ICC_REPLY_OFFSET);
++
++			if (msg->msg_type & ICC_MSG_TYPE_NOTIF) {
++				icc_dev->notification_length = min(msg->length, ICC_MSG_MAX_SIZE);
++				memcpy(icc_dev->notification, msg, icc_dev->notification_length);
++
++				writew(0, icc_dev->icc_base + ICC_REG_EMW);
++				writew(1, icc_dev->icc_base + ICC_REG_EMR);
++
++				writel(ICC_ACK, icc_dev->icc_doorbell_base + ICC_REG_DOORBELL);
++
++				icc_notification_handler(msg->service_id, icc_dev->notification);
++			} else if (msg->msg_type & ICC_MSG_TYPE_REPLY) {
++				icc_dev->reply_length = min(msg->length, ICC_MSG_MAX_SIZE);
++				memcpy(icc_dev->reply, msg, icc_dev->reply_length);
++
++				writew(0, icc_dev->icc_base + ICC_REG_EMW);
++				writew(1, icc_dev->icc_base + ICC_REG_EMR);
++
++				writel(ICC_ACK, icc_dev->icc_doorbell_base + ICC_REG_DOORBELL);
++
++				icc_dev->reply_ready = true;
++				wake_up_interruptible(&icc_dev->wq);
++			} else {
++				dev_err(&icc_dev->pdev->dev, "unknown query\n");
++			}
++		}
++	}
++
++	return IRQ_HANDLED;
++}
++
++static int spcie_icc_init(struct spcie_dev *sdev)
++{
++	int ret;
++	int vector;
++
++	icc_dev = devm_kzalloc(&sdev->pdev->dev, sizeof(*icc_dev), GFP_KERNEL);
++	if (!icc_dev)
++		return -ENOMEM;
++
++	icc_dev->pdev = sdev->pdev;
++	icc_dev->sdev = sdev;
++
++	sdev->icc_dev = icc_dev;
++
++	mutex_init(&icc_dev->lock);
++	init_waitqueue_head(&icc_dev->wq);
++
++	icc_dev->icc_doorbell_base = sdev->bar2 + ICC_DOORBELL_OFFSET;
++	icc_dev->icc_base = sdev->bar4;
++
++	// Clear status.
++	writel(ICC_SEND | ICC_ACK, icc_dev->icc_doorbell_base + ICC_REG_INTR_STATUS);
++
++	// Request IRQ for icc subfunc.
++	vector = pci_irq_vector(sdev->pdev, SPCIE_SUBFUNC_ICC);
++	ret = devm_request_irq(&sdev->pdev->dev, vector, icc_interrupt, 0, "icc", icc_dev);
++	if (ret)
++		return ret;
++
++	// Enable IRQs.
++	writel(ICC_SEND | ICC_ACK, icc_dev->icc_doorbell_base + ICC_REG_INTR_MASK);
++
++	// Enable notifications.
++	icc_button_enable_all_notifications(1);
++	icc_thermal_enable_notification(1);
++
++	// Set LED to white dim.
++	icc_indicator_set_led_white(0);
++
++	// Enable SuperSpeed-USB-C port.
++	icc_usbc_set_pdcon_op_mode(0, 5);
++
++	// Initialize HDMI.
++	getHdmiConfiguration();
++	sceControlHdmiEvent(1);
++	sceHdmiInitVideoConfig();
++
++	return 0;
++}
++
++static int spcie_icc_remove(struct spcie_dev *sdev)
++{
++	int vector;
++	vector = pci_irq_vector(sdev->pdev, SPCIE_SUBFUNC_ICC);
++	devm_free_irq(&sdev->pdev->dev, vector, sdev->icc_dev);
++	return 0;
++}
++
++static int spcie_probe(struct pci_dev *pdev, const struct pci_device_id *id)
++{
++	struct spcie_dev *sdev;
++	int ret;
++
++	sdev = devm_kzalloc(&pdev->dev, sizeof(*sdev), GFP_KERNEL);
++	if (!sdev)
++		return -ENOMEM;
++
++	sdev->pdev = pdev;
++
++	sdev->bar2 = pcim_iomap(pdev, 2, 0);
++	if (!sdev->bar2)
++		return -ENOMEM;
++
++	sdev->bar4 = pcim_iomap(pdev, 4, 0);
++	if (!sdev->bar4)
++		return -ENOMEM;
++
++	ret = pcim_enable_device(pdev);
++	if (ret)
++		return ret;
++
++	pci_set_master(pdev);
++
++	ret = pci_alloc_irq_vectors(pdev, NUM_IRQS, NUM_IRQS, PCI_IRQ_MSI);
++	if (ret < 0)
++		return ret;
++
++	ret = spcie_icc_init(sdev);
++	if (ret)
++		return ret;
++
++	pci_set_drvdata(pdev, sdev);
++
++	return 0;
++}
++
++static void spcie_remove(struct pci_dev *pdev)
++{
++	struct spcie_dev *sdev = pci_get_drvdata(pdev);
++	spcie_icc_remove(sdev);
++	pci_free_irq_vectors(pdev);
++}
++
++static const struct pci_device_id spcie_ids[] = {
++	{ PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_SPCIE) },
++	{ 0, }
++};
++MODULE_DEVICE_TABLE(pci, spcie_ids);
++
++static struct pci_driver spcie_driver = {
++	.name		= "spcie",
++	.id_table	= spcie_ids,
++	.probe		= spcie_probe,
++	.remove		= spcie_remove,
++};
++
++module_pci_driver(spcie_driver);
++
++MODULE_AUTHOR("Andy Nguyen");
++MODULE_DESCRIPTION("PlayStation 5 Salina PCI Express glue driver");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/ps5/tpcie.c b/drivers/ps5/tpcie.c
+new file mode 100644
+index 000000000000..17e0fde08d02
+--- /dev/null
++++ b/drivers/ps5/tpcie.c
+@@ -0,0 +1,286 @@
++#include <linux/console.h>
++#include <linux/module.h>
++#include <linux/msi.h>
++#include <linux/pci.h>
++#include <linux/ps5.h>
++#include <linux/serial_core.h>
++#include <linux/tty_flip.h>
++
++#define PCI_DEVICE_ID_TPCIE	0x90EC
++#define TPCIE_SUBFUNC_UART	6
++#define NUM_IRQS		8
++
++#define UART_OFFSET		0x1010100
++
++struct tpcie_dev;
++
++struct tpcie_uart_dev {
++	struct pci_dev *pdev;
++	struct tpcie_dev *tdev;
++	void __iomem *uart_base;
++	struct tty_driver *tty_drv;
++	struct tty_port *tty_port;
++};
++
++struct tpcie_dev {
++	struct pci_dev *pdev;
++	void __iomem *bar4;
++	struct tpcie_uart_dev *uart_dev;
++};
++
++static struct tpcie_uart_dev *uart_dev;
++
++static bool tpcie_uart_rx_ready(void)
++{
++	uint32_t status = readl(uart_dev->uart_base + 0xc);
++	return (status & 0x10) != 0;
++}
++
++static bool tpcie_uart_tx_ready(void)
++{
++	uint32_t status = readl(uart_dev->uart_base + 0xc);
++	return (status & 0x800) == 0;
++}
++
++static void tpcie_uart_putc(char c)
++{
++	unsigned timeout = 0xffff;
++	while (!tpcie_uart_tx_ready() && --timeout)
++		cpu_relax();
++	writel(c, uart_dev->uart_base + 0x4);
++}
++
++static void tpcie_uart_write(struct console *con, const char *s, unsigned int n)
++{
++	int i;
++
++	for (i = 0; i < n; ++i) {
++		if (s[i] == '\n')
++			tpcie_uart_putc('\r');
++		tpcie_uart_putc(s[i]);
++	}
++}
++
++static ssize_t tpcie_uart_tty_write(struct tty_struct *tty, const u8 *buf, size_t count)
++{
++	int i;
++
++	for (i = 0; i < count; i++) {
++		tpcie_uart_putc(buf[i]);
++	}
++
++	tty_port_tty_wakeup(uart_dev->tty_port);
++
++	return count;
++}
++
++static unsigned int tpcie_uart_tty_write_room(struct tty_struct *tty)
++{
++	return 2048;
++}
++
++static int tpcie_uart_tty_open(struct tty_struct *tty, struct file *file)
++{
++	int ret;
++
++	ret = tty_port_open(uart_dev->tty_port, tty, file);
++	if (ret)
++		return ret;
++
++	return 0;
++}
++
++static void tpcie_uart_tty_close(struct tty_struct *tty, struct file *file)
++{
++	tty_port_close(uart_dev->tty_port, tty, file);
++}
++
++static struct tty_operations tpcie_uart_tty_ops = {
++	.open = tpcie_uart_tty_open,
++	.close = tpcie_uart_tty_close,
++	.write = tpcie_uart_tty_write,
++	.write_room = tpcie_uart_tty_write_room,
++};
++
++static struct tty_port_operations tpcie_uart_port_ops = {};
++
++static struct tty_driver *tpcie_uart_device(struct console *c, int *index)
++{
++	*index = 0;
++	return uart_dev->tty_drv;
++}
++
++static struct console tpcie_uart_console = {
++	.name = "ttyTitania",
++	.device = tpcie_uart_device,
++	.write = tpcie_uart_write,
++	.index = -1,
++};
++
++static irqreturn_t uart_interrupt(int irq, void *dev)
++{
++	u8 ch;
++
++	while (tpcie_uart_rx_ready()) {
++		ch = readl(uart_dev->uart_base + 0x0);
++		tty_insert_flip_char(uart_dev->tty_port, ch, TTY_NORMAL);
++	}
++
++	tty_flip_buffer_push(uart_dev->tty_port);
++
++	return IRQ_HANDLED;
++}
++
++static void tcpie_config_msi(struct tpcie_dev *tdev, int subfunc, struct msi_msg *msg)
++{
++	writel(0xffffffff, tdev->bar4 + 0x120214);
++	writel(0, tdev->bar4 + 0x12020c);
++
++	writel(msg->address_lo, tdev->bar4 + 0x120204);
++	writel(msg->address_hi, tdev->bar4 + 0x120208);
++
++	writel(msg->data & ~0x1f, tdev->bar4 + 0x120210);
++	if (subfunc == TPCIE_SUBFUNC_UART) {
++		writel(msg->data & 0x1f, tdev->bar4 + 0x120230);
++	}
++	writel(msg->data & 0x1f, tdev->bar4 + 0x120210 + subfunc * 4);
++
++	writel(0x33, tdev->bar4 + 0x120200);
++}
++
++static int tpcie_uart_init(struct tpcie_dev *tdev)
++{
++	struct tty_driver *drv;
++	struct tty_port *port;
++	struct msi_msg msg;
++	int vector;
++	int ret;
++
++	uart_dev = devm_kzalloc(&tdev->pdev->dev, sizeof(*uart_dev), GFP_KERNEL);
++	if (!uart_dev)
++		return -ENOMEM;
++
++	uart_dev->pdev = tdev->pdev;
++	uart_dev->tdev = tdev;
++
++	tdev->uart_dev = uart_dev;
++
++	uart_dev->uart_base = tdev->bar4 + UART_OFFSET;
++
++	drv = tty_alloc_driver(1, 0);
++	drv->owner = THIS_MODULE;
++	drv->driver_name = "tpcie_uart";
++	drv->name = "ttyTitania";
++	drv->type = TTY_DRIVER_TYPE_SERIAL;
++	drv->minor_start = 0;
++	drv->num = 1;
++	drv->subtype = SERIAL_TYPE_NORMAL;
++	drv->flags = TTY_DRIVER_RESET_TERMIOS | TTY_DRIVER_REAL_RAW;
++	drv->init_termios = tty_std_termios;
++	tty_set_operations(drv, &tpcie_uart_tty_ops);
++	uart_dev->tty_drv = drv;
++
++	port = devm_kzalloc(&tdev->pdev->dev, sizeof(*port), GFP_KERNEL);
++	if (!port)
++		return -ENOMEM;
++
++	tty_port_init(port);
++	tty_port_link_device(port, drv, 0);
++	port->ops = &tpcie_uart_port_ops;
++	uart_dev->tty_port = port;
++
++	ret = tty_register_driver(drv);
++	if (ret)
++		return ret;
++
++	register_console(&tpcie_uart_console);
++
++	// Request IRQ for uart subfunc.
++	vector = pci_irq_vector(tdev->pdev, TPCIE_SUBFUNC_UART);
++	ret = devm_request_irq(&tdev->pdev->dev, vector, uart_interrupt, 0, "uart", uart_dev);
++	if (ret)
++		return ret;
++
++	// Special MSI configuration.
++	ret = irq_chip_compose_msi_msg(irq_get_irq_data(vector), &msg);
++	if (ret)
++		return ret;
++
++	tcpie_config_msi(tdev, TPCIE_SUBFUNC_UART, &msg);
++
++	// Enable IRQs.
++	writel(0x10, uart_dev->uart_base + 0x8);
++
++	return 0;
++}
++
++static int tpcie_uart_remove(struct tpcie_dev *tdev)
++{
++	int vector;
++	vector = pci_irq_vector(tdev->pdev, TPCIE_SUBFUNC_UART);
++	devm_free_irq(&tdev->pdev->dev, vector, tdev->uart_dev);
++	return 0;
++}
++
++static int tpcie_probe(struct pci_dev *pdev, const struct pci_device_id *id)
++{
++	struct tpcie_dev *tdev;
++	int ret;
++
++	tdev = devm_kzalloc(&pdev->dev, sizeof(*tdev), GFP_KERNEL);
++	if (!tdev)
++		return -ENOMEM;
++
++	tdev->pdev = pdev;
++
++	tdev->bar4 = pcim_iomap(pdev, 4, 0);
++	if (!tdev->bar4)
++		return -ENOMEM;
++
++	ret = pcim_enable_device(pdev);
++	if (ret)
++		return ret;
++
++	pci_set_master(pdev);
++
++	ret = pci_alloc_irq_vectors(pdev, NUM_IRQS, NUM_IRQS, PCI_IRQ_MSI);
++	if (ret < 0)
++		return ret;
++
++	writel(0xf, tdev->bar4 + 0x1142000 + 0x100);
++	writel(0xf, tdev->bar4 + 0x1142000 + 0x104);
++
++	ret = tpcie_uart_init(tdev);
++	if (ret)
++		return ret;
++
++	pci_set_drvdata(pdev, tdev);
++
++	return 0;
++}
++
++static void tpcie_remove(struct pci_dev *pdev)
++{
++	struct tpcie_dev *tdev = pci_get_drvdata(pdev);
++	tpcie_uart_remove(tdev);
++	pci_free_irq_vectors(pdev);
++}
++
++static const struct pci_device_id tpcie_ids[] = {
++	{ PCI_DEVICE(PCI_VENDOR_ID_SONY, PCI_DEVICE_ID_TPCIE) },
++	{ 0, }
++};
++MODULE_DEVICE_TABLE(pci, tpcie_ids);
++
++static struct pci_driver tpcie_driver = {
++	.name		= "tpcie",
++	.id_table	= tpcie_ids,
++	.probe		= tpcie_probe,
++	.remove		= tpcie_remove,
++};
++
++module_pci_driver(tpcie_driver);
++
++MODULE_AUTHOR("Andy Nguyen");
++MODULE_DESCRIPTION("PlayStation 5 Titania PCI Express glue driver");
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/ps5.h b/include/linux/ps5.h
+new file mode 100644
+index 000000000000..9b34ae8f2b73
+--- /dev/null
++++ b/include/linux/ps5.h
+@@ -0,0 +1,70 @@
++#ifndef _LINUX_PS5_H
++#define _LINUX_PS5_H
++
++#include <linux/types.h>
++
++#define ICC_MSG_MIN_SIZE	0x20
++#define ICC_MSG_MAX_SIZE 	0x7f0
++
++struct icc_msg {
++	u8 magic;
++	u8 service_id;
++	u16 msg_type;
++	u16 unk_04;
++	u16 id;
++	u16 length;
++	u16 checksum;
++	u8 data[];
++};
++
++enum icc_service_id {
++	ICC_SERVICE_ID_CONFIGURATION	= 0x01,
++	ICC_SERVICE_ID_GENERAL		= 0x02,
++	ICC_SERVICE_ID_NVS		= 0x03,
++	ICC_SERVICE_ID_POWER		= 0x04,
++	ICC_SERVICE_ID_DEVICE		= 0x05,
++	ICC_SERVICE_ID_UNKNOWN1		= 0x07,
++	ICC_SERVICE_ID_BUTTON		= 0x08,
++	ICC_SERVICE_ID_INDICATOR	= 0x09,
++	ICC_SERVICE_ID_FAN		= 0x0a,
++	ICC_SERVICE_ID_THERMAL		= 0x0b,
++	ICC_SERVICE_ID_HDMI		= 0x10,
++	ICC_SERVICE_ID_USBC		= 0x12,
++	ICC_SERVICE_ID_UNKNOWN3		= 0x13,
++	ICC_SERVICE_ID_CRASH_REPORT	= 0x14,
++	ICC_SERVICE_ID_BDDRIVE		= 0x15,
++	ICC_SERVICE_ID_UNKNOWN4		= 0x8c,
++	ICC_SERVICE_ID_UNKNOWN5		= 0x8d,
++	ICC_SERVICE_ID_SC_CONFIG	= 0x8e,
++	ICC_SERVICE_ID_FLOYD		= 0x9a,
++};
++
++int icc_query(u8 *query, u8 *reply);
++
++void sceControlHdmiEvent(u8 enable);
++void sceHdmiInitVideoConfig(void);
++void sceHdmiSetVideoConfig(int w, int h, int hz);
++void sceHdmiDeviceSetVideoMute(int mute);
++void sceHdmiSetAudioConfig(void);
++void sceHdmiSetAudioMute(int mute);
++int getHdmiConfiguration(void);
++
++int icc_usbc_set_pdcon_op_mode(u8 PortId, u8 OpMode);
++int icc_configuration_set_cpu_info_bit(u8 *bit);
++int icc_configuration_clear_cpu_info_bit(void);
++
++void __noreturn icc_power_shutdown(void);
++void __noreturn icc_power_reboot(void);
++
++int icc_button_enable_notification(u8 type, u8 enable);
++int icc_button_enable_all_notifications(u8 enable);
++int icc_thermal_enable_notification(u8 enable);
++
++int icc_indicator_set_led(u8 setting[], size_t setting_size);
++int icc_indicator_set_led_white(u8 level);
++
++int icc_fan_change_servo_pattern(u8 pattern);
++
++void hdmi_notification_handler(struct icc_msg *msg);
++
++#endif /* _LINUX_PS5_H */
+diff --git a/sound/hda/controllers/intel.c b/sound/hda/controllers/intel.c
+index c01108f8cb7f..30b3d81c29a3 100644
+--- a/sound/hda/controllers/intel.c
++++ b/sound/hda/controllers/intel.c
+@@ -2624,6 +2624,8 @@ static const struct pci_device_id azx_ids[] = {
+ 	  AZX_DCAPS_PM_RUNTIME },
+ 	{ PCI_VDEVICE(ATI, 0x1308),
+ 	  .driver_data = AZX_DRIVER_ATIHDMI_NS | AZX_DCAPS_PRESET_ATI_HDMI_NS },
++	{ PCI_VDEVICE(ATI, 0x13ea),
++	  .driver_data = AZX_DRIVER_ATIHDMI_NS | AZX_DCAPS_PRESET_ATI_HDMI_NS },
+ 	{ PCI_VDEVICE(ATI, 0x157a),
+ 	  .driver_data = AZX_DRIVER_ATIHDMI_NS | AZX_DCAPS_PRESET_ATI_HDMI_NS },
+ 	{ PCI_VDEVICE(ATI, 0x15b3),

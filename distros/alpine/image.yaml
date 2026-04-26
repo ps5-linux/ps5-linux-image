@@ -1,0 +1,175 @@
+image:
+  name: ps5-alpine
+  distribution: alpine
+  release: "3.21"
+  description: Alpine Linux with Weston
+  architecture: x86_64
+
+source:
+  downloader: alpinelinux-http
+  url: https://dl-cdn.alpinelinux.org/alpine
+  skip_verification: true
+
+packages:
+  manager: apk
+  update: true
+  cleanup: true
+
+  repositories:
+  - name: repositories
+    url: |-
+      https://dl-cdn.alpinelinux.org/alpine/v3.21/main
+      https://dl-cdn.alpinelinux.org/alpine/v3.21/community
+
+  sets:
+  - packages:
+    # Wayland compositor + basics
+    - weston
+    - weston-shell-desktop
+    - weston-backend-drm
+    - weston-xwayland
+    - weston-terminal
+    - foot
+    - xwayland
+
+    # Wayland support
+    - dbus
+    - eudev
+    - elogind
+    - polkit-elogind
+    - seatd
+
+    # Audio / media
+    - pipewire
+    - wireplumber
+    - pipewire-pulse
+
+    # Display / GPU
+    - mesa-gbm
+    - mesa-egl
+    - mesa-gl
+    - mesa-dri-gallium
+    - mesa-va-gallium
+    - mesa-vulkan-ati
+    - libinput
+    - xkeyboard-config
+
+    # Networking
+    - networkmanager
+    - networkmanager-wifi
+    - wpa_supplicant
+    - linux-firmware
+    - linux-firmware-amdgpu
+    - xf86-video-amdgpu
+
+    # System
+    - openrc
+    - openssh
+    - sudo
+    - shadow
+    - nano
+    - bash
+    - coreutils
+    - util-linux
+    - e2fsprogs
+    - e2fsprogs-extra
+    - cloud-utils-growpart
+    - mkinitfs
+    - kmod
+    - kexec-tools
+    - syslog-ng
+
+    # Fonts
+    - font-ubuntu
+    - font-liberation
+    - font-dejavu
+    - fontconfig
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/init.d/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.openrc
+  mode: "0755"
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/sh
+    set -eux
+    # Retry up to 10 times on transient network errors
+    echo "retries = 10" >> /etc/apk/apk.conf 2>/dev/null || true
+    # dbus post-install chokes on an empty machine-id
+    rm -f /etc/machine-id
+
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+    fc-cache -f -v
+
+    # SSH
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    rc-update add syslog-ng default
+    rc-update add udev sysinit
+    rc-update add udev-trigger sysinit
+    rc-update add udev-settle sysinit
+    rc-update add sshd default
+    rc-update add dbus default
+    rc-update add elogind default
+    rc-update add seatd default
+    rc-update add networkmanager default
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+    rc-update add grow-rootfs default
+
+    # Create default user (ps5/ps5) in groups needed for Wayland/input
+    addgroup ps5
+    adduser -D -s /bin/bash -G ps5 ps5
+    echo "ps5:ps5" | chpasswd
+    addgroup ps5 wheel
+    addgroup ps5 video
+    addgroup ps5 input
+    addgroup ps5 seat
+    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+    # Auto-start weston on tty1 login
+    {
+        echo 'if [ "$(tty)" = "/dev/tty1" ] && [ -z "$WAYLAND_DISPLAY" ]; then'
+        echo '    export XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"'
+        echo '    mkdir -p "$XDG_RUNTIME_DIR"'
+        echo '    chmod 700 "$XDG_RUNTIME_DIR"'
+        echo '    exec weston --backend=drm-backend.so'
+        echo 'fi'
+    } >> /home/ps5/.bash_profile
+    chown -R ps5:ps5 /home/ps5
+
+    mkdir -p /boot/efi
+
+mappings:
+  architecture_map: alpinelinux

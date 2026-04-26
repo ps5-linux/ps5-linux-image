@@ -1,0 +1,10 @@
+#!/bin/bash
+# Copies the latest kernel + initrd to the EFI partition.
+# Runs on every kernel install/update.
+set -e
+BOOT_PART="/boot/efi"
+KVER="$1"
+[ -z "$KVER" ] && KVER="$(ls -1t /lib/modules | head -1)"
+cp "/boot/vmlinuz-$KVER"        "$BOOT_PART/bzImage"
+cp "/boot/initrd.img-$KVER"     "$BOOT_PART/initrd.img"
+echo ">> Kernel $KVER deployed to $BOOT_PART"

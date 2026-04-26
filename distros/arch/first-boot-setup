@@ -1,0 +1,67 @@
+#!/bin/bash
+# First-boot interactive setup: creates user account.
+set -e
+
+clear
+echo "========================================="
+echo "  Welcome! Let's set up your account."
+echo "========================================="
+echo
+
+# --- Username ---
+while true; do
+    read -rp "Username: " USERNAME
+    if [[ -z "$USERNAME" ]]; then
+        echo "Username cannot be empty."
+    elif ! [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo "Invalid username. Use lowercase letters, digits, hyphens, underscores."
+    else
+        break
+    fi
+done
+
+# --- Password ---
+while true; do
+    read -rsp "Password: " PASSWORD; echo
+    read -rsp "Confirm:  " PASSWORD2; echo
+    if [[ -z "$PASSWORD" ]]; then
+        echo "Password cannot be empty."
+    elif [[ "$PASSWORD" != "$PASSWORD2" ]]; then
+        echo "Passwords do not match. Try again."
+    else
+        break
+    fi
+done
+
+echo
+echo "Creating user $USERNAME ..."
+
+useradd -m -G wheel,seat -s /bin/bash "$USERNAME"
+echo "$USERNAME:$PASSWORD" | chpasswd
+
+# Sudoers
+echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+# Sway config
+mkdir -p "/home/$USERNAME/.config/sway"
+cp /etc/sway/config "/home/$USERNAME/.config/sway/config"
+
+# Auto-start sway on tty1 login
+cat >> "/home/$USERNAME/.bash_profile" << 'EOF'
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+    exec sway
+fi
+EOF
+
+chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
+
+# Remove the getty override so tty1 returns to normal login prompt.
+# When this script exits, systemd's Restart=always on getty@tty1
+# restarts getty with the original agetty config.
+rm -f /etc/systemd/system/getty@tty1.service.d/first-boot.conf
+rmdir /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+systemctl daemon-reload
+
+echo
+echo "Done!"
+sleep 1

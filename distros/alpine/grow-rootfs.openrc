@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+
+description="Grow root filesystem to fill disk"
+
+depend() {
+    need localmount
+}
+
+start() {
+    ebegin "Growing root filesystem"
+    /usr/local/sbin/grow-rootfs
+    eend $?
+}
