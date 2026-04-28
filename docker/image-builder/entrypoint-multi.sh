@@ -5,7 +5,7 @@ set -ex
 
 IMG_SIZE="${IMG_SIZE:-32000}"
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
-DISTROS="${DISTROS:-ubuntu ubuntu2604 arch alpine}"
+DISTROS="${DISTROS:-ubuntu2404 ubuntu2604 arch alpine}"
 STAGING="/tmp/build-staging"
 EFI_LABEL="boot"
 IMG="/output/ps5-multi.img"
@@ -252,9 +252,9 @@ for DISTRO in $DISTROS; do
     rm -rf "$CHROOT/boot/efi"/*
 done
 
-# Ubuntu is default boot — copy its initrd as the generic initrd.img
-if [ -f /tmp/mnt_boot/initrd-ubuntu.img ]; then
-    cp /tmp/mnt_boot/initrd-ubuntu.img /tmp/mnt_boot/initrd.img
+# Ubuntu 26.04 is default boot — copy its initrd as the generic initrd.img
+if [ -f /tmp/mnt_boot/initrd-ubuntu2604.img ]; then
+    cp /tmp/mnt_boot/initrd-ubuntu2604.img /tmp/mnt_boot/initrd.img
 fi
 
 # Generate per-distro cmdline files
@@ -262,8 +262,8 @@ for DISTRO in $DISTROS; do
     sed "s|__DISTRO__|${DISTRO}|" /repo/boot/cmdline.txt > "/tmp/mnt_boot/cmdline-${DISTRO}.txt"
 done
 
-# Default cmdline points to ubuntu
-sed "s|__DISTRO__|ubuntu|" /repo/boot/cmdline.txt > /tmp/mnt_boot/cmdline.txt
+# Default cmdline points to ubuntu2604
+sed "s|__DISTRO__|ubuntu2604|" /repo/boot/cmdline.txt > /tmp/mnt_boot/cmdline.txt
 
 # Copy kexec scripts
 for DISTRO in $DISTROS; do

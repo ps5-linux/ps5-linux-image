@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 
-DISTRO="${DISTRO:-ubuntu}"
+DISTRO="${DISTRO:-ubuntu2604}"
 IMG_SIZE="${IMG_SIZE:-12000}"
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
 STAGING="/tmp/build-staging"

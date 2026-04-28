@@ -12,8 +12,8 @@ DISTRO="unknown"
 cp "/boot/vmlinuz-$KVER"    "$BOOT_PART/bzImage"
 cp "/boot/initrd.img-$KVER" "$BOOT_PART/initrd-${DISTRO}.img"
 
-# Ubuntu is default boot — also update the generic initrd.img
-if [ "$DISTRO" = "ubuntu" ]; then
+# Ubuntu 26.04 is default boot — also update the generic initrd.img
+if [ "$DISTRO" = "ubuntu2604" ]; then
     cp "/boot/initrd.img-$KVER" "$BOOT_PART/initrd.img"
 fi
 

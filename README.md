@@ -1,6 +1,6 @@
 # PS5 Linux Image Builder
 
-Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 24.04, Ubuntu 26.04, Arch, and Alpine, individually or as a multi-distro image with kexec switching.
+Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Ubuntu 24.04, Arch, and Alpine, individually or as a multi-distro image with kexec switching.
 
 ## Prerequisites
 
@@ -17,13 +17,17 @@ newgrp docker
 ## Quick Start
 
 ```bash
-# Build a single Ubuntu 24.04 image
-./build_image.sh --distro ubuntu
-
 # Build a single Ubuntu 26.04 image
 ./build_image.sh --distro ubuntu2604
 
-# Build a multi-distro image (ubuntu + ubuntu2604 + arch + alpine)
+OR
+
+# Build a single Ubuntu 24.04 image
+./build_image.sh --distro ubuntu2404
+
+OR
+
+# Build a multi-distro image (ubuntu2604 + ubuntu2404 + arch + alpine)
 ./build_image.sh --distro all
 ```
 
@@ -32,14 +36,14 @@ The script auto-clones the kernel source, applies PS5 patches, compiles, and bui
 ## Flash to USB
 
 ```bash
-sudo dd if=output/ps5-ubuntu.img of=/dev/sdX bs=4M status=progress
+sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
 ```
 
 ## Options
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--distro` | `ubuntu`, `ubuntu2604`, `arch`, `alpine`, or `all` | `ubuntu` |
+| `--distro` | `ubuntu2604`, `ubuntu2404`, `arch`, `alpine`, or `all` | `ubuntu2604` |
 | `--kernel` | Path to kernel source directory | auto-clone `v6.19.10` |
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
@@ -60,7 +64,7 @@ Use `--clean` to wipe everything and rebuild from scratch. The build will also s
 PS5 Linux Image Builder
 =======================
   Distro:       all
-                (ubuntu ubuntu2604 arch alpine)
+                (ubuntu2604 ubuntu2404 arch alpine)
   Image size:   32000MB
   Kernel src:   /path/to/work/linux
 
@@ -94,12 +98,12 @@ All verbose output goes to `build.log`. The terminal shows a spinner with live p
 | Partition | Type | Label | Content |
 |-----------|------|-------|---------|
 | p1 | FAT32 | boot | Shared kernel, per-distro initrds, kexec scripts |
-| p2 | ext4 | ubuntu | Ubuntu 24.04 rootfs |
-| p3 | ext4 | ubuntu2604 | Ubuntu 26.04 rootfs |
+| p2 | ext4 | ubuntu2604 | Ubuntu 26.04 rootfs |
+| p3 | ext4 | ubuntu2404 | Ubuntu 24.04 rootfs |
 | p4 | ext4 | arch | Arch rootfs |
 | p5 | ext4 | alpine | Alpine rootfs |
 
-The boot partition contains kexec scripts to switch between distros at runtime. Ubuntu 24.04 is the default boot target.
+The boot partition contains kexec scripts to switch between distros at runtime. Ubuntu 26.04 is the default boot target.
 
 ## Directory Layout
 
@@ -113,7 +117,7 @@ docker/
     entrypoint.sh               # Single-distro build logic
     entrypoint-multi.sh         # Multi-distro build logic
 distros/
-  ubuntu/                       # Ubuntu 24.04 (Noble)
+  ubuntu2404/                   # Ubuntu 24.04 (Noble)
   ubuntu2604/                   # Ubuntu 26.04 (Resolute)
   arch/                         # Arch Linux
   alpine/                       # Alpine 3.21
@@ -121,7 +125,7 @@ distros/
 boot/
   cmdline.txt                   # Kernel cmdline template (__DISTRO__ placeholder)
   vram.txt                      # VRAM allocation
-  kexec-{ubuntu,ubuntu2604,arch,alpine}.sh
+  kexec-{ubuntu2604,ubuntu2404,arch,alpine}.sh
 work/                           # Build artifacts (auto-created)
 linux-bin/                      # Compiled kernel packages
 output/                         # Final .img files

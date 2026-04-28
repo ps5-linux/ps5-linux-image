@@ -2,18 +2,18 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DISTRO="ubuntu"
+DISTRO="ubuntu2604"
 KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 
-MULTI_DISTROS="ubuntu ubuntu2604 arch alpine"
+MULTI_DISTROS="ubuntu2604 ubuntu2404 arch alpine"
 
 usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu, ubuntu2604, arch, alpine, all (default: ubuntu)"
+    echo "  --distro     Distribution to build: ubuntu2604, ubuntu2404, arch, alpine, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
@@ -34,8 +34,7 @@ done
 LINUX_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 LINUX_DEFAULT_DIR="$SCRIPT_DIR/work/linux"
 
-# TODO: switch to https://github.com/ps5-linux/ps5-linux-patches.git once repo is public
-PATCHES_REPO="git@github.com:ps5-linux/ps5-linux-patches.git"
+PATCHES_REPO="https://github.com/ps5-linux/ps5-linux-patches.git"
 PATCHES_DIR="$SCRIPT_DIR/work/ps5-linux-patches"
 PATCHES_CONFIG=".config"
 
