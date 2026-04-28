@@ -19,8 +19,13 @@ else
     mkdir -p "$STAGING/debs"
     cp /repo/distros/shared/zz-update-boot      "$STAGING/"
     # Generate per-distro fstab with partition labels
-    printf 'LABEL=%-14s /          ext4  rw,relatime  0 1\nLABEL=%-14s /boot/efi  vfat  rw,relatime  0 2\n' \
-        "$ROOT_LABEL" "$EFI_LABEL" > "$STAGING/fstab"
+    cat <<EOF > "$STAGING/fstab"
+# /etc/fstab: static file system information.
+#
+# <file system> <mount point>   <type>  <options>       <dump>  <pass>
+LABEL=$ROOT_LABEL / ext4 defaults 0 1
+LABEL=$EFI_LABEL /boot/efi vfat defaults 0 1
+EOF
     cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
     cp /repo/distros/${DISTRO}/nm-dns.conf       "$STAGING/" 2>/dev/null || true
 

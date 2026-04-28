@@ -47,6 +47,14 @@ packages:
     - fonts-dejavu
     - fontconfig
     - systemd-zram-generator
+    - git
+    - flex
+    - gawk
+    - bison
+    - dwarves
+    - libelf-dev
+    - libssl-dev
+    - libncurses-dev
     action: install
 
 files:
