@@ -37,6 +37,7 @@ LINUX_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 LINUX_DEFAULT_DIR="$SCRIPT_DIR/work/linux"
 
 PATCHES_REPO="https://github.com/ps5-linux/ps5-linux-patches.git"
+PATCHES_BRANCH="v1.0"
 PATCHES_DIR="$SCRIPT_DIR/work/ps5-linux-patches"
 PATCHES_CONFIG=".config"
 
@@ -218,11 +219,12 @@ else
         mkdir -p "$PATCHES_DIR"
         if [ ! -d "$PATCHES_DIR/.git" ]; then
             run_stage "Clone ps5-linux-patches" \
-                git clone --depth 1 "$PATCHES_REPO" "$PATCHES_DIR"
+                git clone --branch "$PATCHES_BRANCH" --depth 1 "$PATCHES_REPO" "$PATCHES_DIR"
         else
             run_stage "Update ps5-linux-patches" bash -c '
-                git -C "'"$PATCHES_DIR"'" fetch --depth 1 origin
-                git -C "'"$PATCHES_DIR"'" reset --hard FETCH_HEAD'
+                git -C "'"$PATCHES_DIR"'" fetch --depth 1 origin tag "'"$PATCHES_BRANCH"'"
+                git -C "'"$PATCHES_DIR"'" checkout "'"$PATCHES_BRANCH"'"
+                git -C "'"$PATCHES_DIR"'" reset --hard "'"$PATCHES_BRANCH"'"'
         fi
         LINUX_BRANCH="v$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?')"
 
