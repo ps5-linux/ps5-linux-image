@@ -39,6 +39,7 @@ packages:
     - linux-firmware
     - initramfs-tools
     - kmod
+    - dialog
     - sudo
     - nano
     - cloud-guest-utils
