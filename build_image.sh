@@ -9,13 +9,13 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 
-MULTI_DISTROS="ubuntu2604 ubuntu2404 arch alpine"
+MULTI_DISTROS="ubuntu2604 ubuntu2404 arch alpine cachyos"
 
 usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, ubuntu2404, arch, alpine, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, ubuntu2404, arch, cachyos, alpine, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
@@ -90,7 +90,7 @@ SKIP_KERNEL=false
 SKIP_CHROOT=false
 
 # Kernel packages already built?
-if [ "$DISTRO" = "arch" ]; then
+if [ "$DISTRO" = "arch" ] || [ "$DISTRO" = "cachyos" ]; then
     ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true
 elif [ "$DISTRO" = "all" ]; then
     ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && \
@@ -109,7 +109,7 @@ else
     [ -d "$CHROOT_DIR/bin" ] && SKIP_CHROOT=true
 fi
 
-if [ "$DISTRO" = "arch" ]; then
+if [ "$DISTRO" = "arch" ] || [ "$DISTRO" = "cachyos" ]; then
     PKG_EXT="pkg.tar.zst"
 else
     PKG_EXT="deb"
@@ -281,7 +281,7 @@ else
                 -v "$KERNEL_OUT":/out \
                 ps5-kernel-packager-arch
 
-    elif [ "$DISTRO" = "arch" ]; then
+    elif [ "$DISTRO" = "arch" ] || [ "$DISTRO" = "cachyos" ]; then
         run_stage "Build arch packager image" \
             docker build -t ps5-kernel-packager-arch \
                 -f "$SCRIPT_DIR/docker/kernel-builder-arch/Dockerfile" "$SCRIPT_DIR"

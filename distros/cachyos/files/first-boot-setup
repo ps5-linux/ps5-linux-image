@@ -1,0 +1,73 @@
+#!/bin/bash
+# First-boot interactive setup for CachyOS PS5 image.
+# Sets the password for the 'steam' user and optionally the hostname,
+# then creates a sentinel so this script never runs again.
+set -e
+
+# Keep interactive prompts readable on tty1 by suppressing kernel console noise
+# during setup. Restore the previous setting before exiting.
+ORIG_PRINTK="$(cat /proc/sys/kernel/printk 2>/dev/null || true)"
+if [ -n "$ORIG_PRINTK" ]; then
+    echo "1 4 1 7" > /proc/sys/kernel/printk || true
+fi
+cleanup_printk() {
+    if [ -n "$ORIG_PRINTK" ]; then
+        echo "$ORIG_PRINTK" > /proc/sys/kernel/printk 2>/dev/null || true
+    fi
+}
+trap cleanup_printk EXIT
+
+clear
+echo "=================================================="
+echo "  Welcome to CachyOS on PS5!"
+echo "=================================================="
+echo
+echo "User: steam (fixed — used for both Gaming Mode and Desktop)"
+echo
+
+# --- Password ---
+while true; do
+    read -rsp "Set a password for 'steam': " PASSWORD; echo
+    read -rsp "Confirm password:           " PASSWORD2; echo
+    if [[ -z "$PASSWORD" ]]; then
+        echo "Password cannot be empty."
+    elif [[ "$PASSWORD" != "$PASSWORD2" ]]; then
+        echo "Passwords do not match. Try again."
+    else
+        break
+    fi
+done
+
+# --- Hostname ---
+read -rp "Hostname [ps5]: " HOSTNAME
+HOSTNAME="${HOSTNAME:-ps5}"
+
+echo
+echo "Applying settings..."
+
+echo "steam:$PASSWORD" | chpasswd
+
+hostnamectl set-hostname "$HOSTNAME" 2>/dev/null || echo "$HOSTNAME" > /etc/hostname
+# Update /etc/hosts if a 127.0.1.1 line exists, otherwise append one.
+if grep -q '^127\.0\.1\.1' /etc/hosts; then
+    sed -i "s/^127\.0\.1\.1.*/127.0.1.1 $HOSTNAME/" /etc/hosts
+else
+    echo "127.0.1.1 $HOSTNAME" >> /etc/hosts
+fi
+
+# Sentinel — prevents this service from running on subsequent boots.
+touch /etc/ps5-first-boot-done
+
+echo
+echo "=================================================="
+echo "  Setup complete!"
+echo "=================================================="
+echo
+echo "The system will log in on tty1 and start Steam Gaming Mode (Gamescope)."
+echo "(No display manager — same pattern as the Arch Sway image in this repo.)"
+echo
+echo "Tips:"
+echo "  In Steam:  Power > Switch to Desktop  → KDE Plasma (X11)"
+echo "  In KDE:    Double-click 'Return to Gaming Mode' on the desktop"
+echo
+sleep 3
