@@ -1,6 +1,9 @@
 cache/
+ccache/
 work/
 output/
 linux-bin/
 build.log
 
+*.swp
+patches.diff

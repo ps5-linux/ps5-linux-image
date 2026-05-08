@@ -1,4 +1,7 @@
-FROM archlinux:latest
+FROM --platform=linux/amd64 archlinux:latest
+
+# pacman 7+ sandbox doesn't work in Docker containers
+RUN echo 'DisableSandbox' >> /etc/pacman.conf
 
 # Only packaging tools needed — kernel is already compiled
 RUN pacman -Syu --noconfirm && pacman -S --noconfirm \
