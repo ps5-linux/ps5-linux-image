@@ -1,13 +1,19 @@
 #!/bin/bash
 # Grows the root partition and filesystem to fill the disk.
 # Runs once on first boot, then disables itself.
-set -e
+# If resize fails, the service stays enabled and retries next boot.
 
-ROOT_DEV=$(findmnt -no SOURCE /)
+ROOT_DEV=$(findmnt -no SOURCE /) || { echo "Cannot find root device"; exit 1; }
 DISK=$(lsblk -ndo PKNAME "$ROOT_DEV")
-PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
+PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition 2>/dev/null)
+
+if [ -z "$DISK" ] || [ -z "$PART_NUM" ]; then
+    echo "Cannot determine disk layout (DISK=$DISK PART_NUM=$PART_NUM)"
+    exit 1
+fi
 
 growpart "/dev/$DISK" "$PART_NUM" || true
-resize2fs "$ROOT_DEV" || true
+partprobe "/dev/$DISK"
+resize2fs "$ROOT_DEV"
 
 systemctl disable grow-rootfs.service

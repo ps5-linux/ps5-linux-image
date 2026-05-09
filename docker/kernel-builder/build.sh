@@ -25,4 +25,13 @@ KVER=$(make -s kernelrelease)
 rm -f "/out/staging/lib/modules/$KVER/build" \
       "/out/staging/lib/modules/$KVER/source"
 
+# Stage kernel headers for out-of-tree module builds
+echo "=== Staging kernel headers ==="
+HDR="/out/staging/headers"
+make headers_install INSTALL_HDR_PATH="$HDR/usr"
+
+# Use the kernel's own install-extmod-build script (same as deb-pkg uses)
+export srctree=/src SRCARCH=x86
+CC="${CROSS_COMPILE}gcc" HOSTCC=gcc MAKE=make /src/scripts/package/install-extmod-build "$HDR/lib/modules/$KVER/build"
+
 echo "=== Build artifacts staged in /out/staging ==="
