@@ -1,0 +1,78 @@
+#!/bin/bash
+# steamos-session-select — switch between Gamescope and KDE Plasma (no SDDM).
+#
+# Called by Steam's "Power > Switch to Desktop" (passes "desktop") and by the
+# "Return to Gaming Mode" desktop shortcut (passes "gamescope").
+#
+# Mechanism
+#   Root    : write ~/.config/ps5-next-session to "plasma" or "gamescope"
+#   Non-root: sudo to write the token, then end / restart the session.
+#
+# Direction notes
+#   Plasma -> Gamescope: terminate the Plasma session; agetty autologin re-runs the
+#     profile.d script, reads the token and execs gamescope-session-ps5.
+#   Gamescope -> Plasma: a soft tty handoff leaves the AMD GPU's DP->HDMI bridge in
+#     a state that produces a black HDMI image even with KWin running and a valid
+#     2560x1440 mode set. PCI function-level reset hangs the GPU; amdgpu module
+#     reload fails with EBUSY because fbcon / snd-hda hold refcounts. Only a real
+#     reboot — which power-cycles PCI and re-runs atombios — clears the bridge,
+#     so this direction calls `systemctl reboot`. The next-session token has
+#     already been written, so tty1 boots straight into Plasma after the reboot.
+#     On PS5 the boot chain requires re-running the jailbreak after a reboot;
+#     this is an accepted limitation.
+#
+# Optional: write `plasmax11` to ~/.config/ps5-next-session for an X11 escape
+# hatch via startx + startplasma-x11 (ps5-tty-session.sh).
+
+set -euo pipefail
+
+MARKER="/etc/ps5-use-tty-sessions"
+SESSION_FILE="/home/steam/.config/ps5-next-session"
+
+session="${1:-gamescope}"
+
+# ---------- Root path: write next tty session token ----------
+if [[ $EUID -eq 0 ]]; then
+    case "$session" in
+        gamescope)
+            next="gamescope"
+            ;;
+        desktop|plasma|plasma-wayland|plasmax11)
+            next="plasma"
+            ;;
+        *)
+            echo >&2 "steamos-session-select: unrecognised session '$session'"
+            exit 1
+            ;;
+    esac
+
+    if [[ ! -f "$MARKER" ]]; then
+        echo >&2 "steamos-session-select: $MARKER missing — image not using tty sessions"
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$SESSION_FILE")"
+    printf '%s\n' "$next" >"$SESSION_FILE"
+    sync
+    chown steam:steam "$SESSION_FILE"
+    chmod 644 "$SESSION_FILE"
+    echo "steamos-session-select: next tty1 session set to $next"
+    exit 0
+fi
+
+# ---------- Non-root path: escalate, then end / restart the session ----------
+sudo "$(realpath "$0")" "$session"
+
+case "$session" in
+    gamescope)
+        if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+            loginctl terminate-session "$XDG_SESSION_ID"
+        else
+            pkill -u steam kwin_wayland || true
+            pkill -u steam kwin_x11 || true
+        fi
+        ;;
+    desktop|plasma|plasma-wayland|plasmax11)
+        exec sudo systemctl reboot
+        ;;
+esac

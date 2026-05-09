@@ -1,0 +1,23 @@
+[Unit]
+Description=First Boot Interactive Setup
+# Run before tty1 autologin so the steam user never races the installer on tty1.
+Before=getty@tty1.service
+After=systemd-user-sessions.service
+# Skip entirely on every boot after the first.
+ConditionPathExists=!/etc/ps5-first-boot-done
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/first-boot-setup
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

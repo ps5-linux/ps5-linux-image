@@ -1,0 +1,14 @@
+#!/bin/bash
+# Grows the root partition and filesystem to fill the disk.
+# Runs once on first boot, then disables itself.
+set -e
+
+ROOT_DEV=$(findmnt -no SOURCE /)
+DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
+PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
+
+growpart "$DISK" "$PART_NUM"
+
+resize2fs "$ROOT_DEV"
+
+systemctl disable grow-rootfs.service

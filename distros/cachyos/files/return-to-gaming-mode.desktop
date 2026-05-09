@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Return to Gaming Mode
+Comment=Switch back to Steam Big Picture (Gamescope) session
+Exec=steamos-session-select gamescope
+Icon=steam
+Terminal=false
+Categories=Game;
+Keywords=steam;gamescope;gaming;

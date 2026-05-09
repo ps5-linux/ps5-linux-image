@@ -1,0 +1,28 @@
+#!/bin/bash
+# PS5 gamescope session launcher — invoked by tty1 (ps5-tty-session.sh).
+#
+# All flags are PS5-specific workarounds:
+#   LIBSEAT_BACKEND=logind   : avoids seatd/logind conflict; matches the user
+#                              session so gamescope can take DRM/input devices
+#                              via logind TakeDevice()
+#   WLR_LIBINPUT_NO_DEVICES=1: suppresses libinput "no input devices" abort;
+#                              PS5 has no directly-attached HID devices on boot
+#   --backend drm            : take the DRM device directly (no nested compositor)
+#   -e                       : embedded / Steam Big Picture mode
+#   --prefer-output DP-1     : target the PS5's internal DP connector
+#   --sdr-gamut-wideness 0   : keep SDR colour space at sRGB; the PS5's internal
+#                              DP->HDMI bridge cannot translate BT2020 signalling
+#
+# The ps5-display.lua script in ~/.config/gamescope/scripts/ enforces sRGB
+# colorimetry at the DRM atomic commit level (belt-and-suspenders with the flag).
+
+export LIBSEAT_BACKEND=logind
+export WLR_LIBINPUT_NO_DEVICES=1
+
+exec /usr/bin/gamescope \
+    --backend drm \
+    -e \
+    --prefer-output DP-1 \
+    --sdr-gamut-wideness 0 \
+    -- \
+    /usr/bin/steam -gamepadui -steamos3

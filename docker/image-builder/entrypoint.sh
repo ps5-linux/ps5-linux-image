@@ -26,22 +26,39 @@ else
 LABEL=$ROOT_LABEL / ext4 defaults 0 1
 LABEL=$EFI_LABEL /boot/efi vfat defaults 0 1
 EOF
-    cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
     cp /repo/distros/${DISTRO}/nm-dns.conf       "$STAGING/" 2>/dev/null || true
 
     case "$DISTRO" in
         ubuntu*)
+            cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
             ;;
         alpine)
+            cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
             ;;
         arch)
+            cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
             cp /repo/distros/arch/first-boot-setup         "$STAGING/"
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                  "$STAGING/pkgs/"
+            ;;
+        cachyos)
+            mkdir -p "$STAGING/files"
+            cp /repo/distros/cachyos/files/grow-rootfs                "$STAGING/files/"
+            cp /repo/distros/cachyos/files/grow-rootfs.service        "$STAGING/files/"
+            cp /repo/distros/cachyos/files/first-boot-setup           "$STAGING/files/"
+            cp /repo/distros/cachyos/files/first-boot.service         "$STAGING/files/"
+            cp /repo/distros/cachyos/files/gamescope-session-ps5      "$STAGING/files/"
+            cp /repo/distros/cachyos/files/steamos-session-select     "$STAGING/files/"
+            cp /repo/distros/cachyos/files/return-to-gaming-mode.desktop "$STAGING/files/"
+            cp /repo/distros/cachyos/files/ps5-display.lua            "$STAGING/files/"
+            cp /repo/distros/cachyos/files/plasma-workspace-env-ps5.sh "$STAGING/files/"
+            cp /repo/distros/cachyos/files/ps5-tty-session.sh         "$STAGING/files/"
+            mkdir -p "$STAGING/pkgs"
+            cp /kernel-debs/*.pkg.tar.zst                             "$STAGING/pkgs/"
             ;;
     esac
 
