@@ -8,6 +8,7 @@ DISK=$(lsblk -ndo PKNAME "$ROOT_DEV")
 PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
 
 growpart "/dev/$DISK" "$PART_NUM" || true
+partprobe "/dev/$DISK"
 resize2fs "$ROOT_DEV" || true
 
 rc-update del grow-rootfs default

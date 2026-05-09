@@ -8,6 +8,7 @@ DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
 PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
 
 parted -s "$DISK" resizepart "$PART_NUM" 100%
+partprobe "$DISK"
 resize2fs "$ROOT_DEV"
 
 systemctl disable grow-rootfs.service

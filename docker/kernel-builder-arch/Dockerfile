@@ -14,6 +14,7 @@ WORKDIR /out/staging
 # Output packages go to /out
 
 COPY docker/kernel-builder-arch/build.sh /build.sh
+COPY docker/kernel-builder-arch/install.sh /install.sh
 RUN chmod +x /build.sh
 
 CMD ["/build.sh"]
