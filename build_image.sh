@@ -21,6 +21,7 @@ usage() {
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
+    echo "  --clean-only Remove all cached build artifacts and exit"
     echo "  --kernel-only  Build and package the kernel only, then exit"
     echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: v1.0)"
     exit 1
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
         --kernel)    KERNEL_SRC="$2";      shift 2 ;;
         --img-size)  IMG_SIZE="$2";        shift 2 ;;
         --clean)     CLEAN=true;           shift ;;
+        --clean-only) CLEAN=true; CLEAN_EXIT=true; shift ;;
         --kernel-only) KERNEL_ONLY=true;   shift ;;
         --patches-ref) [ -n "$2" ] && PATCHES_REF="$2"; shift 2 ;;
         -h|--help)   usage ;;
@@ -76,14 +78,14 @@ esac
 BUILD_PID=""
 
 cleanup() {
+    trap - INT TERM EXIT
     echo ""
-    echo "Interrupted. Cleaning up..."
+    echo "Cleaning up..."
     docker kill "$DOCKER_NAME" 2>/dev/null || true
     [ -n "$BUILD_PID" ] && kill "$BUILD_PID" 2>/dev/null || true
     wait "$BUILD_PID" 2>/dev/null || true
-    exit 130
 }
-trap cleanup INT TERM
+trap cleanup INT TERM EXIT
 
 # --- Clean ---
 if [ "$CLEAN" = true ]; then
@@ -94,6 +96,7 @@ if [ "$CLEAN" = true ]; then
             alpine rm -rf "/parent/$(basename "$dir")"
     done
     echo "Done."
+    [ "$CLEAN_EXIT" = true ] && exit 0
     echo ""
 fi
 
