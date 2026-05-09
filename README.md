@@ -1,6 +1,6 @@
 # PS5 Linux Image Builder
 
-Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Ubuntu 24.04, Arch, CachyOS (Gamescope + Steam), and Alpine, individually or as a multi-distro image with kexec switching.
+Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), and Alpine, individually or as a multi-distro image with kexec switching.
 
 ## Prerequisites
 
@@ -22,17 +22,12 @@ newgrp docker
 
 OR
 
-# Build a single Ubuntu 24.04 image
-./build_image.sh --distro ubuntu2404
-
-OR
-
 # Build CachyOS (Arch-based, Gamescope + Steam Big Picture)
 ./build_image.sh --distro cachyos
 
 OR
 
-# Build a multi-distro image (ubuntu2604 + ubuntu2404 + arch + alpine + cachyos)
+# Build a multi-distro image (ubuntu2604 + arch + alpine + cachyos)
 ./build_image.sh --distro all
 ```
 
@@ -48,7 +43,7 @@ sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--distro` | `ubuntu2604`, `ubuntu2404`, `arch`, `cachyos`, `alpine`, or `all` | `ubuntu2604` |
+| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `alpine`, or `all` | `ubuntu2604` |
 | `--kernel` | Path to kernel source directory | auto-clone `v6.19.10` |
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
@@ -69,7 +64,7 @@ Use `--clean` to wipe everything and rebuild from scratch. The build will also s
 PS5 Linux Image Builder
 =======================
   Distro:       all
-                (ubuntu2604 ubuntu2404 arch alpine cachyos)
+                (ubuntu2604 arch alpine cachyos)
   Image size:   32000MB
   Kernel src:   /path/to/work/linux
 
@@ -91,7 +86,6 @@ All verbose output goes to `build.log`. The terminal shows a spinner with live p
 
 | Distro | Desktop | Kernel format | Init |
 |--------|---------|---------------|------|
-| Ubuntu 24.04 (Noble) | GNOME | `.deb` | systemd |
 | Ubuntu 26.04 (Resolute) | GNOME | `.deb` | systemd |
 | Arch | Sway | `.pkg.tar.zst` | systemd |
 | CachyOS | Gamescope + Steam Big Picture (Arch + `[cachyos]` repo, no v3 migration in image build) | `.pkg.tar.zst` | systemd |
@@ -99,16 +93,15 @@ All verbose output goes to `build.log`. The terminal shows a spinner with live p
 
 ## Multi-distro Image
 
-`--distro all` builds a 32GB image with 6 partitions (one EFI boot partition plus five root filesystems):
+`--distro all` builds a 32GB image with 5 partitions (one EFI boot partition plus four root filesystems):
 
 | Partition | Type | Label | Content |
 |-----------|------|-------|---------|
 | p1 | FAT32 | boot | Shared kernel, per-distro initrds, kexec scripts |
 | p2 | ext4 | ubuntu2604 | Ubuntu 26.04 rootfs |
-| p3 | ext4 | ubuntu2404 | Ubuntu 24.04 rootfs |
-| p4 | ext4 | arch | Arch rootfs |
-| p5 | ext4 | alpine | Alpine rootfs |
-| p6 | ext4 | cachyos | CachyOS rootfs |
+| p3 | ext4 | arch | Arch rootfs |
+| p4 | ext4 | alpine | Alpine rootfs |
+| p5 | ext4 | cachyos | CachyOS rootfs |
 
 The boot partition contains kexec scripts to switch between distros at runtime. Ubuntu 26.04 is the default boot target.
 
@@ -124,7 +117,6 @@ docker/
     entrypoint.sh               # Single-distro build logic
     entrypoint-multi.sh         # Multi-distro build logic
 distros/
-  ubuntu2404/                   # Ubuntu 24.04 (Noble)
   ubuntu2604/                   # Ubuntu 26.04 (Resolute)
   arch/                         # Arch Linux
   cachyos/                      # CachyOS repos + Gamescope/Steam
@@ -133,7 +125,7 @@ distros/
 boot/
   cmdline.txt                   # Kernel cmdline template (__DISTRO__ placeholder)
   vram.txt                      # VRAM allocation
-  kexec-{ubuntu2604,ubuntu2404,arch,alpine,cachyos}.sh
+  kexec-{ubuntu2604,arch,alpine,cachyos}.sh
 work/                           # Build artifacts (auto-created)
 linux-bin/                      # Compiled kernel packages
 output/                         # Final .img files

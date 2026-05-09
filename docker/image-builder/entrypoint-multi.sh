@@ -5,7 +5,7 @@ set -ex
 
 IMG_SIZE="${IMG_SIZE:-32000}"
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
-DISTROS="${DISTROS:-ubuntu2404 ubuntu2604 arch alpine cachyos}"
+DISTROS="${DISTROS:-ubuntu2604 arch alpine cachyos}"
 STAGING="/tmp/build-staging"
 EFI_LABEL="boot"
 IMG="/output/ps5-multi.img"
