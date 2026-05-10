@@ -66,7 +66,7 @@ if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
 fi
 
 if [ -z "$FORMAT" ]; then
-    case "$DISTRO" in arch) FORMAT="arch" ;; all) FORMAT="all" ;; *) FORMAT="deb" ;; esac
+    case "$DISTRO" in arch|cachyos) FORMAT="arch" ;; all) FORMAT="all" ;; *) FORMAT="deb" ;; esac
 fi
 
 KERNEL_BUILDER_PLATFORM="linux/amd64"

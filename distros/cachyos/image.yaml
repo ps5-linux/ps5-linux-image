@@ -156,12 +156,8 @@ actions:
   action: |-
     #!/bin/bash
     set -eux
-    # Pacman 7 Landlock/seccomp sandbox breaks under distrobuilder/Docker (unsupported kernel).
-    if grep -q '^#DisableSandbox' /etc/pacman.conf; then
-      sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
-    elif ! grep -q '^DisableSandbox' /etc/pacman.conf; then
-      sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
-    fi
+    # Pacman 7 Landlock sandbox is unsupported under QEMU; disable it.
+    sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 
     CACHYOS_PKG="https://mirror.cachyos.org/repo/x86_64/cachyos"
 

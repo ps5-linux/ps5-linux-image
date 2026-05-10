@@ -118,6 +118,9 @@ actions:
   action: |-
     #!/bin/bash
     set -eux
+    # Pacman 7 Landlock sandbox is unsupported under QEMU; disable it.
+    sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+
     # Initialise pacman keyring
     pacman-key --init
     pacman-key --populate archlinux
