@@ -159,7 +159,9 @@ actions:
   action: |-
     #!/bin/bash
     set -eux
-    systemctl enable grow-rootfs.service
+    mkdir -p /etc/systemd/system/local-fs.target.wants
+    ln -sf /etc/systemd/system/grow-rootfs.service \
+      /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
 
     # Create default user (ps5/ps5)
     useradd -m -G wheel,seat -s /bin/bash ps5
