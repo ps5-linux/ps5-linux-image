@@ -1,11 +1,8 @@
 #!/bin/bash
-# First-boot interactive setup for CachyOS PS5 image.
-# Sets the password for the 'steam' user and optionally the hostname,
-# then creates a sentinel so this script never runs again.
-set -e
+# First-boot: dialog wizard on tty1 (timezone, steam password, hostname).
+# Defaults: UTC, ps5, keep image password (steam:steam). Skips on Cancel use defaults.
+set -euo pipefail
 
-# Keep interactive prompts readable on tty1 by suppressing kernel console noise
-# during setup. Restore the previous setting before exiting.
 ORIG_PRINTK="$(cat /proc/sys/kernel/printk 2>/dev/null || true)"
 if [ -n "$ORIG_PRINTK" ]; then
     echo "1 4 1 7" > /proc/sys/kernel/printk || true
@@ -17,57 +14,93 @@ cleanup_printk() {
 }
 trap cleanup_printk EXIT
 
-clear
-echo "=================================================="
-echo "  Welcome to CachyOS on PS5!"
-echo "=================================================="
-echo
-echo "User: steam (fixed — used for both Gaming Mode and Desktop)"
-echo
+export TERM="${TERM:-linux}"
 
-# --- Password ---
-while true; do
-    read -rsp "Set a password for 'steam': " PASSWORD; echo
-    read -rsp "Confirm password:           " PASSWORD2; echo
-    if [[ -z "$PASSWORD" ]]; then
-        echo "Password cannot be empty."
-    elif [[ "$PASSWORD" != "$PASSWORD2" ]]; then
-        echo "Passwords do not match. Try again."
+apply_timezone() {
+    local tz="${1:-UTC}"
+    timedatectl set-timezone "$tz" 2>/dev/null || ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
+}
+
+apply_hostname() {
+    local hn="${1:-ps5}"
+    hostnamectl set-hostname "$hn" 2>/dev/null || echo "$hn" > /etc/hostname
+    if grep -q '^127\.0\.1\.1' /etc/hosts; then
+        sed -i "s/^127\.0\.1\.1.*/127.0.1.1 $hn/" /etc/hosts
     else
-        break
+        echo "127.0.1.1 $hn" >> /etc/hosts
     fi
-done
+}
 
-# --- Hostname ---
-read -rp "Hostname [ps5]: " HOSTNAME
-HOSTNAME="${HOSTNAME:-ps5}"
+main() {
+    if ! command -v dialog >/dev/null 2>&1; then
+        echo "first-boot-setup: dialog not installed" >&2
+        exit 1
+    fi
 
-echo
-echo "Applying settings..."
+    clear
 
-echo "steam:$PASSWORD" | chpasswd
+    local choice
+    choice="$(dialog --stdout --clear --menu \
+        "Welcome to CachyOS on PS5\nUser: steam (Gaming Mode + Desktop)" \
+        17 64 4 \
+        defaults "Use defaults (UTC, hostname ps5, keep password)" \
+        custom "Customize timezone, password, hostname" )" \
+        || choice="defaults"
 
-hostnamectl set-hostname "$HOSTNAME" 2>/dev/null || echo "$HOSTNAME" > /etc/hostname
-# Update /etc/hosts if a 127.0.1.1 line exists, otherwise append one.
-if grep -q '^127\.0\.1\.1' /etc/hosts; then
-    sed -i "s/^127\.0\.1\.1.*/127.0.1.1 $HOSTNAME/" /etc/hosts
-else
-    echo "127.0.1.1 $HOSTNAME" >> /etc/hosts
-fi
+    if [[ "$choice" == "defaults" ]]; then
+        apply_timezone UTC
+        apply_hostname ps5
+    else
+        local zones
+        mapfile -t zones < <(timedatectl list-timezones 2>/dev/null | LC_ALL=C sort -u)
+        local -a menu_args=()
+        local z
+        for z in "${zones[@]}"; do
+            menu_args+=("$z" "$z")
+        done
 
-# Sentinel — prevents this service from running on subsequent boots.
-touch /etc/ps5-first-boot-done
+        local tz_pick
+        if ((${#menu_args[@]} == 0)); then
+            apply_timezone UTC
+        elif tz_pick="$(dialog --stdout --clear --menu "Select timezone (Cancel = UTC)" 22 70 15 \
+            "${menu_args[@]}")"; then
+            apply_timezone "$tz_pick"
+        else
+            apply_timezone UTC
+        fi
 
-echo
-echo "=================================================="
-echo "  Setup complete!"
-echo "=================================================="
-echo
-echo "The system will log in on tty1 and start Steam Gaming Mode (Gamescope)."
-echo "(No display manager — same pattern as the Arch Sway image in this repo.)"
-echo
-echo "Tips:"
-echo "  In Steam:  Power > Switch to Desktop  → KDE Plasma (X11)"
-echo "  In KDE:    Double-click 'Return to Gaming Mode' on the desktop"
-echo
-sleep 3
+        if dialog --clear --yesno "Change password for user steam?" 8 55; then
+            local p1 p2
+            while true; do
+                p1="$(dialog --stdout --clear --insecure --passwordbox "New password (empty = skip)" 9 55)" \
+                    || break
+                p2="$(dialog --stdout --clear --insecure --passwordbox "Confirm password" 9 55)" \
+                    || break
+                if [[ -z "$p1" ]]; then
+                    dialog --clear --msgbox "Password unchanged (empty)." 7 44
+                    break
+                fi
+                if [[ "$p1" != "$p2" ]]; then
+                    dialog --clear --msgbox "Passwords do not match. Try again." 7 50
+                    continue
+                fi
+                echo "steam:$p1" | chpasswd
+                break
+            done
+        fi
+
+        local hn
+        hn="$(dialog --stdout --clear --inputbox "Hostname (empty = ps5)" 9 50 "ps5")" \
+            || hn="ps5"
+        hn="${hn:-ps5}"
+        apply_hostname "$hn"
+    fi
+
+    touch /etc/ps5-first-boot-done
+
+    dialog --clear --msgbox \
+        "Setup complete.\n\nYou will log in on tty1 (Steam Gaming Mode).\n\nDesktop: Steam > Power > Switch to KDE\nReturn: double-click the desktop shortcut." \
+        14 62
+}
+
+main "$@"
