@@ -59,6 +59,11 @@ packages:
     # Networking
     - networkmanager
     - linux-firmware
+    # GIO module libgiognutls.so (KDE/Konsole, GVfs, etc.): needs gnutls → nettle (libhogweed).
+    # Explicit install avoids a sparse dependency tree under distrobuilder cleanup: true.
+    - gnutls
+    - nettle
+    - glib-networking
 
     # System
     - base
