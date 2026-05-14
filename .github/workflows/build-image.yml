@@ -1,0 +1,194 @@
+name: Build Image
+run-name: Build Image (${{ inputs.distro || 'all' }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: 'Distribution'
+        default: 'ubuntu2604'
+        type: choice
+        options: [all, ubuntu2604, arch, cachyos, alpine]
+  workflow_call:
+    inputs:
+      distro:
+        type: string
+        default: 'ubuntu2604'
+    secrets:
+      REMOTE_SSH_KEY:
+        required: true
+      REMOTE_SSH_CONFIG:
+        required: true
+      REMOTE_SSH_KNOWN_HOSTS:
+        required: true
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+      R2_ENDPOINT:
+        required: true
+      R2_BUCKET:
+        required: true
+
+jobs:
+  matrix:
+    runs-on: self-hosted
+    outputs:
+      distros: ${{ steps.set.outputs.distros }}
+    steps:
+      - id: set
+        run: |
+          INPUT="${{ inputs.distro || 'ubuntu2604' }}"
+          if [ "$INPUT" = "all" ]; then
+            echo 'distros=["ubuntu2604","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: matrix
+    runs-on: self-hosted
+    timeout-minutes: 240
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        distro: ${{ fromJson(needs.matrix.outputs.distros) }}
+
+    env:
+      CCACHE_DIR: /home/opc/ccache
+
+    steps:
+      - name: Checkout image builder
+        uses: actions/checkout@v6
+        with:
+          repository: ps5-linux/ps5-linux-image
+          path: image
+          ref: main
+
+      - name: Build ${{ matrix.distro }} image
+        run: |
+          bash image/build_image.sh --distro "${{ matrix.distro }}"
+
+      - name: Set version info
+        id: version
+        run: |
+          psha=$(git -C image/work/ps5-linux-patches rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          kver=$(cat image/linux-bin/VERSION 2>/dev/null || echo "unknown")
+          ts=$(date -u +%Y%m%d-%H%M%S)
+          echo "psha=$psha" >> "$GITHUB_OUTPUT"
+          echo "kver=$kver" >> "$GITHUB_OUTPUT"
+          echo "ts=$ts" >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        run: |
+          ls -lh image/output/*.img
+          sha256sum image/output/*.img
+
+      - name: Compress image
+        run: |
+          xz -T0 -9 -c image/output/ps5-${{ matrix.distro }}.img \
+            > image/output/ps5-${{ matrix.distro }}.img.xz
+
+      - name: Upload to R2
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: true
+        run: |
+          rclone copyto image/output/ps5-${{ matrix.distro }}.img.xz \
+            "r2:${{ secrets.R2_BUCKET }}/ps5-${{ matrix.distro }}.img.xz"
+
+      - name: Save build metadata
+        run: |
+          mkdir -p meta
+          sha256sum image/output/ps5-${{ matrix.distro }}.img.xz \
+            | sed 's|image/output/||' > meta/${{ matrix.distro }}.sha256
+          echo "${{ steps.version.outputs.kver }}" > meta/kver
+          echo "${{ steps.version.outputs.psha }}" > meta/psha
+          echo "${{ steps.version.outputs.ts }}" > meta/ts
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v6
+        with:
+          name: meta-${{ matrix.distro }}
+          path: meta/
+          retention-days: 1
+
+      - name: Upload to remote
+        env:
+          SSH_KEY: ${{ secrets.REMOTE_SSH_KEY }}
+          SSH_CONFIG: ${{ secrets.REMOTE_SSH_CONFIG }}
+          SSH_KNOWN_HOSTS: ${{ secrets.REMOTE_SSH_KNOWN_HOSTS }}
+        run: |
+          DIR=$(mktemp -d)
+          echo "$SSH_KEY" > "$DIR/key"
+          chmod 600 "$DIR/key"
+          echo "$SSH_CONFIG" > "$DIR/config"
+          sed -i "s|~/.ssh/remote_key|$DIR/key|" "$DIR/config"
+          echo "$SSH_KNOWN_HOSTS" > "$DIR/known_hosts"
+          SSH="ssh -F $DIR/config -o UserKnownHostsFile=$DIR/known_hosts"
+          SCP="scp -F $DIR/config -o UserKnownHostsFile=$DIR/known_hosts"
+          DEST="image-${{ matrix.distro }}-${{ steps.version.outputs.ts }}"
+          $SSH remote mkdir -p "./$DEST"
+          $SCP image/output/*.img.xz "remote:./$DEST/"
+          $SSH remote 'ls -dt image-${{ matrix.distro }}-*/ | tail -n +5 | xargs rm -rf' || true
+          rm -rf "$DIR"
+
+  release:
+    needs: build
+    runs-on: self-hosted
+    permissions:
+      contents: write
+    steps:
+      - name: Download build metadata
+        uses: actions/download-artifact@v6
+        with:
+          pattern: meta-*
+          path: meta
+          merge-multiple: true
+
+      - name: Prepare release body
+        id: body
+        run: |
+          KVER=$(cat meta/kver)
+          PSHA=$(cat meta/psha)
+          TS=$(cat meta/ts)
+          SUMS=$(cat meta/*.sha256)
+
+          {
+            echo 'text<<EOF'
+            echo "PS5 Linux images — built from latest \`main\`."
+            echo ""
+            echo "Kernel: \`$KVER\`"
+            echo "Patches: [\`$PSHA\`](https://github.com/ps5-linux/ps5-linux-patches/commit/$PSHA)"
+            echo "Built: \`$TS\`"
+            echo ""
+            echo "| Image | Download |"
+            echo "|-------|----------|"
+            echo "| Ubuntu 26.04 | [\`ps5-ubuntu2604.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-ubuntu2604.img.xz) |"
+            echo "| Arch | [\`ps5-arch.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-arch.img.xz) |"
+            echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
+            echo "| Alpine | [\`ps5-alpine.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-alpine.img.xz) |"
+            echo ""
+            echo "**SHA256 checksums:**"
+            echo "\`\`\`"
+            echo "$SUMS"
+            echo "\`\`\`"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: latest
+          name: PS5 Linux Image (latest)
+          body: ${{ steps.body.outputs.text }}
+          make_latest: true

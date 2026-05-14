@@ -1,0 +1,173 @@
+name: test uploads
+
+on:
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: self-hosted
+    outputs:
+      distros: ${{ steps.set.outputs.distros }}
+    steps:
+      - id: set
+        run: echo 'distros=["ubuntu2604","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: matrix
+    runs-on: self-hosted
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        distro: ${{ fromJson(needs.matrix.outputs.distros) }}
+
+    steps:
+      - name: Reset workspace
+        run: sudo rm -rf ./*
+
+      - name: Create fake image
+        run: |
+          mkdir -p image/output
+          dd if=/dev/urandom of=image/output/ps5-${{ matrix.distro }}.img bs=1M count=8
+
+      - name: Compress image
+        run: |
+          xz -T0 -1 -c image/output/ps5-${{ matrix.distro }}.img \
+            > image/output/ps5-${{ matrix.distro }}.img.xz
+
+      - name: Upload to R2
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: true
+        run: |
+          rclone copyto image/output/ps5-${{ matrix.distro }}.img.xz \
+            "r2:${{ secrets.R2_BUCKET }}/test-${{ matrix.distro }}.img.xz" -v
+
+      - name: Save build metadata
+        run: |
+          mkdir -p meta
+          sha256sum image/output/ps5-${{ matrix.distro }}.img.xz \
+            | sed 's|image/output/||' > meta/${{ matrix.distro }}.sha256
+          echo "6.x.y-test" > meta/kver
+          echo "abc1234" > meta/psha
+          date -u +%Y%m%d-%H%M%S > meta/ts
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v6
+        with:
+          name: meta-${{ matrix.distro }}
+          path: meta/
+          retention-days: 1
+
+      - name: Upload to remote
+        env:
+          SSH_KEY: ${{ secrets.REMOTE_SSH_KEY }}
+          SSH_CONFIG: ${{ secrets.REMOTE_SSH_CONFIG }}
+          SSH_KNOWN_HOSTS: ${{ secrets.REMOTE_SSH_KNOWN_HOSTS }}
+        run: |
+          DIR=$(mktemp -d)
+          echo "$SSH_KEY" > "$DIR/key"
+          chmod 600 "$DIR/key"
+          echo "$SSH_CONFIG" > "$DIR/config"
+          sed -i "s|~/.ssh/remote_key|$DIR/key|" "$DIR/config"
+          echo "$SSH_KNOWN_HOSTS" > "$DIR/known_hosts"
+          SSH="ssh -F $DIR/config -o UserKnownHostsFile=$DIR/known_hosts"
+          SCP="scp -F $DIR/config -o UserKnownHostsFile=$DIR/known_hosts"
+          $SSH remote mkdir -p ./test-upload
+          $SCP image/output/ps5-${{ matrix.distro }}.img.xz "remote:./test-upload/"
+          rm -rf "$DIR"
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf image/output meta
+
+  release:
+    needs: build
+    runs-on: self-hosted
+    steps:
+      - name: Download build metadata
+        uses: actions/download-artifact@v6
+        with:
+          pattern: meta-*
+          path: meta
+          merge-multiple: true
+
+      - name: Prepare release body
+        id: body
+        run: |
+          KVER=$(cat meta/kver)
+          PSHA=$(cat meta/psha)
+          TS=$(cat meta/ts)
+          SUMS=$(cat meta/*.sha256)
+
+          {
+            echo 'text<<EOF'
+            echo "PS5 Linux images — built from latest \`main\`."
+            echo ""
+            echo "Kernel: \`$KVER\`"
+            echo "Patches: [\`$PSHA\`](https://github.com/ps5-linux/ps5-linux-patches/commit/$PSHA)"
+            echo "Built: \`$TS\`"
+            echo ""
+            echo "| Image | Download |"
+            echo "|-------|----------|"
+            echo "| Ubuntu 26.04 | [\`ps5-ubuntu2604.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-ubuntu2604.img.xz) |"
+            echo "| Arch | [\`ps5-arch.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-arch.img.xz) |"
+            echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
+            echo "| Alpine | [\`ps5-alpine.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-alpine.img.xz) |"
+            echo ""
+            echo "**SHA256 checksums:**"
+            echo "\`\`\`"
+            echo "$SUMS"
+            echo "\`\`\`"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify release body
+        run: |
+          echo "=== Release body ==="
+          cat <<'EOF'
+          ${{ steps.body.outputs.text }}
+          EOF
+          echo ""
+          echo "=== All checksums ==="
+          cat meta/*.sha256
+
+  cleanup-remote:
+    needs: release
+    runs-on: self-hosted
+    if: always()
+    steps:
+      - name: Clean up R2 test files
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: true
+        run: |
+          for d in ubuntu2604 arch cachyos alpine; do
+            rclone delete "r2:${{ secrets.R2_BUCKET }}/test-${d}.img.xz" -v || true
+          done
+
+      - name: Clean up remote test files
+        env:
+          SSH_KEY: ${{ secrets.REMOTE_SSH_KEY }}
+          SSH_CONFIG: ${{ secrets.REMOTE_SSH_CONFIG }}
+          SSH_KNOWN_HOSTS: ${{ secrets.REMOTE_SSH_KNOWN_HOSTS }}
+        run: |
+          DIR=$(mktemp -d)
+          echo "$SSH_KEY" > "$DIR/key"
+          chmod 600 "$DIR/key"
+          echo "$SSH_CONFIG" > "$DIR/config"
+          sed -i "s|~/.ssh/remote_key|$DIR/key|" "$DIR/config"
+          echo "$SSH_KNOWN_HOSTS" > "$DIR/known_hosts"
+          SSH="ssh -F $DIR/config -o UserKnownHostsFile=$DIR/known_hosts"
+          $SSH remote rm -rf ./test-upload
+          rm -rf "$DIR"

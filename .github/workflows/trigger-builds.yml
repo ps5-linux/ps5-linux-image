@@ -6,24 +6,13 @@ on:
     branches: [main]
 
 jobs:
-  kernel:
-    permissions:
-      contents: write
-    uses: ps5-linux/ps5-linux-updates/.github/workflows/build-kernel.yml@main
-    secrets:
-      DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
-      REMOTE_SSH_KEY: ${{ secrets.REMOTE_SSH_KEY }}
-      REMOTE_SSH_CONFIG: ${{ secrets.REMOTE_SSH_CONFIG }}
-      REMOTE_SSH_KNOWN_HOSTS: ${{ secrets.REMOTE_SSH_KNOWN_HOSTS }}
-
   image:
     permissions:
       contents: write
-    uses: ps5-linux/ps5-linux-updates/.github/workflows/build-image.yml@main
+    uses: ./.github/workflows/build-image.yml
     with:
       distro: all
     secrets:
-      DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
       REMOTE_SSH_KEY: ${{ secrets.REMOTE_SSH_KEY }}
       REMOTE_SSH_CONFIG: ${{ secrets.REMOTE_SSH_CONFIG }}
       REMOTE_SSH_KNOWN_HOSTS: ${{ secrets.REMOTE_SSH_KNOWN_HOSTS }}
@@ -31,4 +20,3 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
-
