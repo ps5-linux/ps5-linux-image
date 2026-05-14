@@ -94,6 +94,7 @@ jobs:
             > image/output/ps5-${{ matrix.distro }}.img.xz
 
       - name: Upload to R2
+        if: github.event_name != 'pull_request'
         env:
           RCLONE_CONFIG_R2_TYPE: s3
           RCLONE_CONFIG_R2_PROVIDER: Cloudflare
@@ -122,6 +123,7 @@ jobs:
           retention-days: 1
 
       - name: Upload to remote
+        if: github.event_name != 'pull_request'
         env:
           SSH_KEY: ${{ secrets.REMOTE_SSH_KEY }}
           SSH_CONFIG: ${{ secrets.REMOTE_SSH_CONFIG }}
@@ -144,6 +146,7 @@ jobs:
   release:
     needs: build
     runs-on: self-hosted
+    if: github.event_name != 'pull_request'
     permissions:
       contents: write
     steps:

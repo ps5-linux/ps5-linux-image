@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request_target:
+    types: [labeled]
+    branches: [main]
 
 jobs:
   image:
+    # Only run on push, manual dispatch, OR when the 'run-ci' label is added to a PR
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request_target' && github.event.label.name == 'run-ci')
     permissions:
       contents: write
     uses: ./.github/workflows/build-image.yml
