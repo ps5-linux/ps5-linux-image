@@ -59,6 +59,11 @@ packages:
     # Networking
     - networkmanager
     - linux-firmware
+    # GIO module libgiognutls.so (KDE/Konsole, GVfs, etc.): needs gnutls → nettle (libhogweed).
+    # Explicit install avoids a sparse dependency tree under distrobuilder cleanup: true.
+    - gnutls
+    - nettle
+    - glib-networking
 
     # System
     - base
@@ -75,6 +80,7 @@ packages:
     - dbus
     - kexec-tools
     - curl
+    - dialog
 
     # Fonts (Steam UI + KDE) — CJK + emoji avoid "tofu" boxes in Steam Big Picture language list
     - ttf-dejavu
@@ -241,6 +247,8 @@ actions:
     touch /etc/ps5-use-tty-sessions
     ln -sf /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target
     ln -sf /dev/null /etc/systemd/system/sddm.service
+    # First-boot wizard handles timezone/password/hostname; avoid duplicate prompts.
+    ln -sf /dev/null /etc/systemd/system/systemd-firstboot.service
 
     mkdir -p /etc/systemd/system/getty@tty1.service.d
     printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=-/sbin/agetty --autologin steam --noclear %I $TERM' \
