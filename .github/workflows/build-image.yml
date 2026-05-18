@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos, alpine]
+        options: [all, ubuntu2604, arch, cachyos]
   workflow_call:
     inputs:
       distro:
@@ -40,7 +40,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","arch","cachyos"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -59,7 +59,7 @@ jobs:
         distro: ${{ fromJson(needs.matrix.outputs.distros) }}
 
     env:
-      CCACHE_DIR: /home/opc/ccache
+      CACHE_DIR: /home/opc/ccache
 
     steps:
       - name: Checkout image builder
@@ -178,7 +178,6 @@ jobs:
             echo "| Ubuntu 26.04 | [\`ps5-ubuntu2604.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-ubuntu2604.img.xz) |"
             echo "| Arch | [\`ps5-arch.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-arch.img.xz) |"
             echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
-            echo "| Alpine | [\`ps5-alpine.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-alpine.img.xz) |"
             echo ""
             echo "**SHA256 checksums:**"
             echo "\`\`\`"

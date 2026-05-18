@@ -11,13 +11,13 @@ IMG_SIZE=12000
 KERNEL_ONLY=false
 PATCHES_REF="v1.1"
 
-MULTI_DISTROS="ubuntu2604 arch alpine cachyos"
+MULTI_DISTROS="ubuntu2604 arch cachyos"
 
 usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, alpine, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"

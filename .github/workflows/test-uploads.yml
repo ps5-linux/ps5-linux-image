@@ -10,7 +10,7 @@ jobs:
       distros: ${{ steps.set.outputs.distros }}
     steps:
       - id: set
-        run: echo 'distros=["ubuntu2604","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
+        run: echo 'distros=["ubuntu2604","arch","cachyos"]' >> "$GITHUB_OUTPUT"
 
   build:
     needs: matrix
@@ -119,7 +119,6 @@ jobs:
             echo "| Ubuntu 26.04 | [\`ps5-ubuntu2604.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-ubuntu2604.img.xz) |"
             echo "| Arch | [\`ps5-arch.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-arch.img.xz) |"
             echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
-            echo "| Alpine | [\`ps5-alpine.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-alpine.img.xz) |"
             echo ""
             echo "**SHA256 checksums:**"
             echo "\`\`\`"
@@ -152,7 +151,7 @@ jobs:
           RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           RCLONE_CONFIG_R2_NO_CHECK_BUCKET: true
         run: |
-          for d in ubuntu2604 arch cachyos alpine; do
+          for d in ubuntu2604 arch cachyos; do
             rclone delete "r2:${{ secrets.R2_BUCKET }}/test-${d}.img.xz" -v || true
           done
 

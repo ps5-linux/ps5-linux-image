@@ -5,7 +5,7 @@ set -ex
 
 IMG_SIZE="${IMG_SIZE:-32000}"
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
-DISTROS="${DISTROS:-ubuntu2604 arch alpine cachyos}"
+DISTROS="${DISTROS:-ubuntu2604 arch cachyos}"
 STAGING="/tmp/build-staging"
 EFI_LABEL="boot"
 IMG="/output/ps5-multi.img"
@@ -41,10 +41,6 @@ for DISTRO in $DISTROS; do
                 cp /repo/distros/${DISTRO}/grow-rootfs   "$STAGING/"
                 cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
                 cp /kernel-debs/*.deb                          "$STAGING/debs/"
-                ;;
-            alpine)
-                cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
-                cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
                 ;;
             arch)
                 cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
@@ -87,75 +83,6 @@ for DISTRO in $DISTROS; do
         echo "$DISTRO" > "$CHROOT/etc/ps5-distro"
     fi
 
-    # --- Alpine kernel gap: no kernel installed via image.yaml ---
-    # This runs even with --skip-chroot because Alpine's rootfs never includes a kernel;
-    # we must always extract it from the .deb artifacts and generate an initrd.
-    if [ "$DISTRO" = "alpine" ]; then
-        echo "=== Alpine: installing kernel from .deb artifacts ==="
-
-        # Extract modules + vmlinuz from the linux-image .deb
-        ALPINE_STAGING="/tmp/alpine-kernel-staging"
-        rm -rf "$ALPINE_STAGING"
-        mkdir -p "$ALPINE_STAGING"
-        for deb in /kernel-debs/linux-image-*.deb; do
-            [ -f "$deb" ] || continue
-            dpkg-deb -x "$deb" "$ALPINE_STAGING"
-        done
-
-        # Identify kernel version from the extracted .deb before copying
-        KVER=$(ls -1 "$ALPINE_STAGING/lib/modules" 2>/dev/null | head -1)
-
-        if [ -n "$KVER" ]; then
-            # Resolve the real modules path inside the chroot.
-            # Alpine may use usr-merge (/lib -> usr/lib), so we must follow
-            # symlinks to find the actual directory on disk.
-            if [ -L "$CHROOT/lib" ]; then
-                MODDIR="$CHROOT/usr/lib/modules"
-            else
-                MODDIR="$CHROOT/lib/modules"
-            fi
-            mkdir -p "$MODDIR"
-            # Remove any stale modules from a previous build
-            rm -rf "$MODDIR/$KVER"
-            cp -a "$ALPINE_STAGING/lib/modules/$KVER" "$MODDIR/"
-            mkdir -p "$CHROOT/boot"
-            cp "$ALPINE_STAGING/boot/vmlinuz-$KVER" "$CHROOT/boot/vmlinuz-$KVER"
-            echo ">> Alpine: modules copied to $MODDIR/$KVER"
-            ls -la "$MODDIR/"
-        fi
-        rm -rf "$ALPINE_STAGING"
-
-        if [ -n "$KVER" ]; then
-            echo "=== Alpine: generating initrd ==="
-            chroot "$CHROOT" depmod -a "$KVER" 2>/dev/null || true
-
-            # Bind-mount essentials and run mkinitfs inside the alpine chroot
-            mount --bind /dev  "$CHROOT/dev"
-            mount --bind /proc "$CHROOT/proc"
-            mount --bind /sys  "$CHROOT/sys"
-            chroot "$CHROOT" mkinitfs -k "$KVER" -o "/boot/initrd.img-$KVER" "$KVER" || true
-            umount "$CHROOT/sys" "$CHROOT/proc" "$CHROOT/dev"
-
-            # Populate /boot/efi/ for boot partition assembly
-            mkdir -p "$CHROOT/boot/efi"
-            cp "$CHROOT/boot/vmlinuz-$KVER" "$CHROOT/boot/efi/bzImage"
-            # mkinitfs may output as initramfs-<flavor> — find whatever was generated
-            if [ -f "$CHROOT/boot/initrd.img-$KVER" ]; then
-                cp "$CHROOT/boot/initrd.img-$KVER" "$CHROOT/boot/efi/initrd.img"
-            else
-                # mkinitfs default output: /boot/initramfs-vanilla or similar
-                INITRD=$(ls -1t "$CHROOT"/boot/initramfs-* "$CHROOT"/boot/initrd* 2>/dev/null | head -1)
-                if [ -n "$INITRD" ]; then
-                    cp "$INITRD" "$CHROOT/boot/efi/initrd.img"
-                else
-                    echo "WARNING: No initrd found for alpine after mkinitfs"
-                fi
-            fi
-            echo ">> Alpine: kernel $KVER staged to boot/efi/"
-        else
-            echo "WARNING: No kernel modules found in .deb for alpine, skipping initrd generation"
-        fi
-    fi
 done
 
 # ======================================================================
@@ -259,9 +186,6 @@ for DISTRO in $DISTROS; do
         cp "$EFIDIR/initrd.img" "/tmp/mnt_boot/initrd-${DISTRO}.img"
     elif [ -n "$KVER" ] && [ -f "$BOOTDIR/initrd.img-$KVER" ]; then
         cp "$BOOTDIR/initrd.img-$KVER" "/tmp/mnt_boot/initrd-${DISTRO}.img"
-    elif [ -f "$BOOTDIR/initramfs-vanilla" ]; then
-        # Alpine mkinitfs names its output initramfs-vanilla
-        cp "$BOOTDIR/initramfs-vanilla" "/tmp/mnt_boot/initrd-${DISTRO}.img"
     fi
 
     # Clean up /boot/efi contents from the rootfs (they're on the boot partition now)

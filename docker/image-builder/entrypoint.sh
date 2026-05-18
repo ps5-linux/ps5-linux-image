@@ -34,10 +34,6 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
             ;;
-        alpine)
-            cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
-            cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
-            ;;
         arch)
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
@@ -76,65 +72,6 @@ case "$DISTRO" in
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;
 esac
-
-# --- Alpine kernel gap: no kernel installed via image.yaml ---
-# Extract kernel from .deb, copy modules + bzImage, then chroot to run mkinitfs
-if [ "$DISTRO" = "alpine" ]; then
-    echo "=== Alpine: installing kernel from .deb artifacts ==="
-
-    ALPINE_STAGING="/tmp/alpine-kernel-staging"
-    rm -rf "$ALPINE_STAGING"
-    mkdir -p "$ALPINE_STAGING"
-    for deb in /kernel-debs/linux-image-*.deb; do
-        [ -f "$deb" ] || continue
-        dpkg-deb -x "$deb" "$ALPINE_STAGING"
-    done
-
-    KVER=$(ls -1 "$ALPINE_STAGING/lib/modules" 2>/dev/null | head -1)
-
-    if [ -n "$KVER" ]; then
-        # Resolve the real modules path (Alpine may use usr-merge: /lib -> usr/lib)
-        if [ -L "$CHROOT/lib" ]; then
-            MODDIR="$CHROOT/usr/lib/modules"
-        else
-            MODDIR="$CHROOT/lib/modules"
-        fi
-        mkdir -p "$MODDIR"
-        rm -rf "$MODDIR/$KVER"
-        cp -a "$ALPINE_STAGING/lib/modules/$KVER" "$MODDIR/"
-        mkdir -p "$CHROOT/boot"
-        cp "$ALPINE_STAGING/boot/vmlinuz-$KVER" "$CHROOT/boot/vmlinuz-$KVER"
-        echo ">> Alpine: modules copied to $MODDIR/$KVER"
-    fi
-    rm -rf "$ALPINE_STAGING"
-
-    if [ -n "$KVER" ]; then
-        chroot "$CHROOT" depmod -a "$KVER" 2>/dev/null || true
-
-        mount --bind /dev  "$CHROOT/dev"
-        mount --bind /proc "$CHROOT/proc"
-        mount --bind /sys  "$CHROOT/sys"
-        chroot "$CHROOT" mkinitfs -k "$KVER" -o "/boot/initrd.img-$KVER" "$KVER" || true
-        umount "$CHROOT/sys" "$CHROOT/proc" "$CHROOT/dev"
-
-        # Populate /boot/efi/ for boot partition assembly
-        mkdir -p "$CHROOT/boot/efi"
-        cp "$CHROOT/boot/vmlinuz-$KVER" "$CHROOT/boot/efi/bzImage"
-        if [ -f "$CHROOT/boot/initrd.img-$KVER" ]; then
-            cp "$CHROOT/boot/initrd.img-$KVER" "$CHROOT/boot/efi/initrd.img"
-        else
-            INITRD=$(ls -1t "$CHROOT"/boot/initramfs-* "$CHROOT"/boot/initrd* 2>/dev/null | head -1)
-            if [ -n "$INITRD" ]; then
-                cp "$INITRD" "$CHROOT/boot/efi/initrd.img"
-            else
-                echo "WARNING: No initrd found for alpine after mkinitfs"
-            fi
-        fi
-        echo ">> Alpine: kernel $KVER staged to boot/efi/"
-    else
-        echo "WARNING: No kernel modules found in .deb for alpine"
-    fi
-fi
 
 # --- Create GPT disk image ---
 echo "=== Creating ${IMG_SIZE}MB disk image ==="
