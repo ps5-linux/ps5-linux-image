@@ -65,9 +65,7 @@ jobs:
       - name: Checkout image builder
         uses: actions/checkout@v6
         with:
-          repository: ps5-linux/ps5-linux-image
           path: image
-          ref: main
 
       - name: Build ${{ matrix.distro }} image
         run: |
