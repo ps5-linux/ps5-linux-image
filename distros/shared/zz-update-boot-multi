@@ -9,14 +9,30 @@ KVER="$1"
 DISTRO="unknown"
 [ -f /etc/ps5-distro ] && DISTRO="$(cat /etc/ps5-distro)"
 
-mv "$BOOT_PART/bzImage"              "$BOOT_PART/bzImage.old"
-mv "$BOOT_PART/initrd-${DISTRO}.img" "$BOOT_PART/initrd-${DISTRO}.img.old"
-cp "/boot/vmlinuz-$KVER"             "$BOOT_PART/bzImage"
-cp "/boot/initrd.img-$KVER"          "$BOOT_PART/initrd-${DISTRO}.img"
+# Debian-based desktop metapackages may also install a generic kernel. Once
+# linux-ps5 is present, never deploy another kernel to the PS5 boot partition.
+if command -v dpkg-query >/dev/null 2>&1 && dpkg-query -W linux-ps5 >/dev/null 2>&1; then
+    PS5_KVER="$(dpkg-query -L linux-ps5 | sed -n 's#^/boot/vmlinuz-##p' | head -1)"
+    if [ -n "$PS5_KVER" ] && [ "$KVER" != "$PS5_KVER" ]; then
+        echo ">> Ignoring non-PS5 kernel $KVER (PS5 kernel is $PS5_KVER)"
+        exit 0
+    fi
+fi
+
+if [ -f "$BOOT_PART/bzImage" ]; then
+    mv "$BOOT_PART/bzImage" "$BOOT_PART/bzImage.old"
+fi
+if [ -f "$BOOT_PART/initrd-${DISTRO}.img" ]; then
+    mv "$BOOT_PART/initrd-${DISTRO}.img" "$BOOT_PART/initrd-${DISTRO}.img.old"
+fi
+cp "/boot/vmlinuz-$KVER"    "$BOOT_PART/bzImage"
+cp "/boot/initrd.img-$KVER" "$BOOT_PART/initrd-${DISTRO}.img"
 
 # Ubuntu 26.04 is default boot — also update the generic initrd.img
 if [ "$DISTRO" = "ubuntu2604" ]; then
-    mv "$BOOT_PART/initrd.img"  "$BOOT_PART/initrd.img.old"
+    if [ -f "$BOOT_PART/initrd.img" ]; then
+        mv "$BOOT_PART/initrd.img" "$BOOT_PART/initrd.img.old"
+    fi
     cp "/boot/initrd.img-$KVER" "$BOOT_PART/initrd.img"
 fi
 

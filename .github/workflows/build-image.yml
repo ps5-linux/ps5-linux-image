@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos]
+        options: [all, ubuntu2604, arch, cachyos, kali]
   workflow_call:
     inputs:
       distro:
@@ -176,6 +176,9 @@ jobs:
             echo "| Ubuntu 26.04 | [\`ps5-ubuntu2604.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-ubuntu2604.img.xz) |"
             echo "| Arch | [\`ps5-arch.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-arch.img.xz) |"
             echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
+            if [ -f meta/kali.sha256 ]; then
+              echo "| Kali | [\`ps5-kali.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-kali.img.xz) |"
+            fi
             echo ""
             echo "**SHA256 checksums:**"
             echo "\`\`\`"

@@ -1,0 +1,13 @@
+* text=auto
+
+*.sh text eol=lf
+*.bash text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.service text eol=lf
+
+build_image.sh text eol=lf
+boot/kexec*.sh text eol=lf
+distros/**/grow-rootfs text eol=lf
+distros/shared/zz-update-boot* text eol=lf
+docker/** text eol=lf

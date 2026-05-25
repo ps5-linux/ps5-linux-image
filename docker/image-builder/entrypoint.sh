@@ -10,6 +10,10 @@ EFI_LABEL="boot"
 CHROOT="/build/chroot"
 IMG="/output/ps5-${DISTRO}.img"
 
+if [ "$DISTRO" = "kali" ]; then
+    ROOT_LABEL="kali-root"
+fi
+
 if [ "$SKIP_CHROOT" = "true" ] && [ -d "$CHROOT/bin" ]; then
     echo "=== Reusing cached $DISTRO rootfs ==="
 else
@@ -33,6 +37,12 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
+            ;;
+        kali)
+            cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"
+            cp /repo/distros/${DISTRO}/grow-rootfs.service  "$STAGING/"
+            cp /repo/distros/${DISTRO}/kali-archive-keyring.asc "$STAGING/"
+            cp /kernel-debs/*.deb                           "$STAGING/debs/"
             ;;
         arch)
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
@@ -58,6 +68,11 @@ EOF
             ;;
     esac
 
+    find "$STAGING" -type f \
+        ! -path "$STAGING/debs/*" \
+        ! -path "$STAGING/pkgs/*" \
+        -exec sed -i 's/\r$//' {} +
+
     # --- Build rootfs ---
     rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
 
@@ -75,8 +90,10 @@ esac
 
 # --- Create GPT disk image ---
 echo "=== Creating ${IMG_SIZE}MB disk image ==="
-TMPIMG="/build/ps5-${DISTRO}.img"
-dd if=/dev/zero of="$TMPIMG" bs=1M count=$IMG_SIZE conv=fsync status=progress
+TMPIMG="/output/.ps5-${DISTRO}.img.tmp"
+rm -f "$TMPIMG"
+truncate -s "${IMG_SIZE}M" "$TMPIMG"
+sync
 
 parted -s "$TMPIMG" mklabel gpt
 parted -s "$TMPIMG" mkpart primary ext4  500MiB 100%
@@ -115,7 +132,9 @@ sync
 
 echo "=== Assembling boot partition ==="
 mv /tmp/usb_root/boot/efi/* /tmp/usb_efi/ 2>/dev/null || true
-sed "s|__DISTRO__|$ROOT_LABEL|" /repo/boot/cmdline.txt > /tmp/usb_efi/cmdline.txt
+CMDLINE_TEMPLATE="/repo/distros/${DISTRO}/cmdline.txt"
+[ -f "$CMDLINE_TEMPLATE" ] || CMDLINE_TEMPLATE="/repo/boot/cmdline.txt"
+sed "s|__DISTRO__|$ROOT_LABEL|" "$CMDLINE_TEMPLATE" > /tmp/usb_efi/cmdline.txt
 cp /repo/boot/vram.txt     /tmp/usb_efi/
 cp /repo/boot/kexec.sh     /tmp/usb_efi/
 sync
