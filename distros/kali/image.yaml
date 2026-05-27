@@ -28,10 +28,9 @@ packages:
 
   sets:
   - packages:
-    # Official Kali desktop and default toolset. The full "everything" set is
-    # too large for reliable release builds on the self-hosted runner.
+    # Full Kali desktop and toolset
     - kali-desktop-xfce
-    - kali-linux-default
+    - kali-linux-everything
     - kali-defaults
     - kali-defaults-desktop
     - kali-themes

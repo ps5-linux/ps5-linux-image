@@ -48,7 +48,7 @@ jobs:
   build:
     needs: matrix
     runs-on: self-hosted
-    timeout-minutes: 360
+    timeout-minutes: 720
     permissions:
       contents: write
 

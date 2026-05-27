@@ -19,7 +19,7 @@ usage() {
     echo "Options:"
     echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, kali, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
-    echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all, 49152 for kali)"
+    echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all, 98304 for kali)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
     echo "  --clean-only Remove all cached build artifacts and exit"
     echo "  --kernel-only  Build and package the kernel only, then exit"
@@ -65,7 +65,7 @@ if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
     IMG_SIZE=32000
 fi
 if [ "$DISTRO" = "kali" ] && [ "$IMG_SIZE" = "12000" ]; then
-    IMG_SIZE=49152
+    IMG_SIZE=98304
 fi
 
 if [ -z "$FORMAT" ]; then
