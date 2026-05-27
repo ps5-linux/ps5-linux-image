@@ -1,7 +1,8 @@
 image:
   name: ps5-kali
   distribution: debian
-  release: kali-rolling
+  # Release images use Kali's last snapshot for stable, repeatable builds.
+  release: kali-last-snapshot
   description: Kali Linux XFCE desktop
   architecture: x86_64
 
@@ -21,7 +22,7 @@ packages:
   repositories:
   - name: sources.list
     url: |-
-      deb https://kali.download/kali kali-rolling main contrib non-free non-free-firmware
+      deb https://kali.download/kali kali-last-snapshot main contrib non-free non-free-firmware
     architectures:
     - amd64
 
