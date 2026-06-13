@@ -1,0 +1,297 @@
+image:
+  name: ps5-fedora
+  distribution: fedora
+  release: "44"
+  description: Fedora GNOME (Wayland) desktop for PS5
+  architecture: x86_64
+
+source:
+  downloader: fedora-http
+  url: https://kojipkgs.fedoraproject.org
+  skip_verification: true
+
+packages:
+  manager: dnf
+  update: true
+  cleanup: true
+
+  sets:
+  - packages:
+    # Full GNOME desktop + GDM display manager.
+    - gnome-shell
+    - gnome-session
+    - gnome-terminal
+    - gdm
+    - mutter
+    - nautilus
+    - gnome-control-center
+    - gnome-settings-daemon
+    - gnome-keyring
+    - gnome-backgrounds
+    - gnome-text-editor
+    - gnome-system-monitor
+    - gnome-disk-utility
+    - gnome-calculator
+    - gnome-tweaks
+    - gnome-extensions-app
+    - gnome-software
+    - gnome-initial-setup
+    - file-roller
+    - loupe
+    - evince
+    - baobab
+    - xdg-desktop-portal-gnome
+    - xdg-user-dirs-gtk
+    - xorg-x11-server-Xwayland
+    - polkit
+
+    # Audio / media
+    - pipewire
+    - wireplumber
+    - pipewire-pulseaudio
+
+    # Display / GPU (AMD) — userspace GL/Vulkan only; the kernel amdgpu driver
+    # comes from the linux-ps5 rpm. amdgpu is loaded LATE (by udev after pivot),
+    # exactly like the working Arch/Ubuntu images — NOT forced into the initramfs.
+    - mesa-dri-drivers
+    - mesa-vulkan-drivers
+    - mesa-va-drivers
+    - libinput
+
+    # Networking
+    - NetworkManager
+    - NetworkManager-wifi
+    - network-manager-applet
+    - linux-firmware
+    - iw
+    - wpa_supplicant
+    - wireless-regdb
+    - util-linux
+
+    # Toolchain for the out-of-tree PS5 IW620 WiFi module build
+    - gcc
+    - make
+    - git-core
+    - bc
+    - bison
+    - flex
+    - elfutils-libelf-devel
+    - openssl-devel
+
+    # System
+    - glibc-langpack-en
+    - openssh-server
+    - sudo
+    - nano
+    - dracut
+    - kmod
+    - e2fsprogs
+    - parted
+    - cloud-utils-growpart
+    - kexec-tools
+    - zram-generator-defaults
+    - firefox
+
+    # Fonts
+    - dejavu-sans-fonts
+    - liberation-fonts
+    - google-noto-sans-fonts
+    - google-noto-emoji-fonts
+    - fontconfig
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/machine-id
+  generator: dump
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+- path: /opt/rpms/
+  generator: copy
+  source: /tmp/build-staging/rpms
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    echo "retries=10" >> /etc/dnf/dnf.conf
+    dnf makecache || true
+
+- trigger: post-update
+  action: |-
+    #!/bin/bash
+    set -eux
+    passwd -l root
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    fc-cache -f 2>/dev/null || true
+
+    # SSH — password auth only, root login via sudo
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl enable sshd
+    systemctl enable NetworkManager
+    systemctl enable gdm
+    systemctl set-default graphical.target
+
+    # The PS5 kernel patch writes into the request_firmware() buffer to skip
+    # Sony's signature header (gfx_v10_0_early_init, amdgpu_sdma_init_microcode).
+    # Firmware loaded from a .xz file is decompressed into pages the kernel
+    # maps PAGE_KERNEL_RO, so that write oopses and /dev/dri never appears.
+    # Fedora is the only distro shipping .xz firmware — Ubuntu/Arch use .zst
+    # (writable vzalloc buffer) and Debian/Kali ship raw .bin, which is why
+    # only this image black-screened. Keep the PS5 GPU firmware uncompressed.
+    # linux-firmware dedupes identical blobs as symlinks (mec2 -> mec) and
+    # unxz refuses symlinks, so materialize links first while targets exist.
+    cd /usr/lib/firmware/amdgpu
+    for f in cyan_skillfish*.xz; do
+        if [ -L "$f" ]; then
+            tgt=$(readlink -f "$f")
+            rm "$f"
+            xz -dc "$tgt" > "${f%.xz}"
+        fi
+    done
+    unxz cyan_skillfish*.xz
+    ls -la cyan_skillfish*
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    systemctl enable grow-rootfs.service
+
+    # Built in a chroot → filesystem never SELinux-labelled. Disable SELinux.
+    mkdir -p /etc/selinux
+    if [ -f /etc/selinux/config ]; then
+        sed -i 's/^SELINUX=.*/SELINUX=disabled/' /etc/selinux/config
+    else
+        printf 'SELINUX=disabled\nSELINUXTYPE=targeted\n' > /etc/selinux/config
+    fi
+
+    # --- Default user + GDM autologin ---
+    useradd -m -G wheel,video,input,render -s /bin/bash ps5
+    echo "ps5:ps5" | chpasswd
+    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+    # GDM autologin so the GNOME desktop appears without a login prompt.
+    mkdir -p /etc/gdm
+    sed -i 's/^\[daemon\]/[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=ps5/' /etc/gdm/custom.conf 2>/dev/null || \
+    cat > /etc/gdm/custom.conf <<'EOF'
+    [daemon]
+    AutomaticLoginEnable=True
+    AutomaticLogin=ps5
+
+    [security]
+
+    [xdmcp]
+
+    [chooser]
+
+    [debug]
+    EOF
+
+    # Skip gnome-initial-setup for the autologin user.
+    mkdir -p /home/ps5/.config
+    echo 'yes' > /home/ps5/.config/gnome-initial-setup-done
+    chown -R ps5:ps5 /home/ps5
+
+    # zram swap
+    printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
+
+    # --- Install custom kernel rpm (its %post builds initramfs + deploys boot) -
+    # amdgpu is NOT forced into the initramfs — it loads late via udev, exactly
+    # like the working Arch/Ubuntu images.
+    mkdir -p /boot/efi
+    rpm -ivh /opt/rpms/*.rpm
+    rm -rf /opt/rpms
+    KVER=$(ls -1t /lib/modules | head -1)
+    [ -f "/boot/efi/bzImage" ] && [ -f "/boot/efi/initrd.img" ]
+
+    # --- PS5 internal WiFi: build the PS5-patched NXP IW620 mwifiex modules ---
+    IW620_SRC=/tmp/ps5-iw620-mwifiex
+    IW620_PATCHES=/tmp/ps5-linux-mwifiex
+    IW620_NXP_REF=a5fe4e194bf99315e349d81d77d6dfacec70757a
+    IW620_PATCH_REF=5cfd063449f27e2f8a7d17c814a3bb21c27aa903
+    rm -rf "$IW620_SRC" "$IW620_PATCHES"
+    git clone https://github.com/nxp-imx/mwifiex.git "$IW620_SRC"
+    git -C "$IW620_SRC" checkout "$IW620_NXP_REF"
+    git clone https://github.com/ps5-linux/ps5-linux-mwifiex.git "$IW620_PATCHES"
+    git -C "$IW620_PATCHES" checkout "$IW620_PATCH_REF"
+    git -C "$IW620_SRC" apply "$IW620_PATCHES/ps5-iw620.patch"
+    make -C "$IW620_SRC" CONFIG_OBJTOOL= KERNELDIR="/usr/lib/modules/$KVER/build" ARCH=x86 -j"$(nproc)"
+    test -f "$IW620_SRC/mlan.ko"
+    test -f "$IW620_SRC/moal.ko"
+    install -d "/usr/lib/modules/$KVER/extra/ps5-iw620"
+    install -m 0644 "$IW620_SRC/mlan.ko" "/usr/lib/modules/$KVER/extra/ps5-iw620/mlan.ko"
+    install -m 0644 "$IW620_SRC/moal.ko" "/usr/lib/modules/$KVER/extra/ps5-iw620/moal.ko"
+    install -d /etc/modprobe.d /usr/local/sbin /etc/systemd/system /usr/share/doc/ps5-iw620
+    cat > /etc/modprobe.d/ps5-iw620.conf <<'EOF'
+    blacklist moal
+    blacklist mlan
+    softdep moal pre: cfg80211 mlan
+    options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=0 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
+    EOF
+    cat > /usr/local/sbin/ps5-iw620-load <<'EOF'
+    #!/bin/sh
+    set -eu
+    FW_NAME=nxp/pcieuartiw620_combo_v1.bin
+    FW_DST=/lib/firmware/$FW_NAME
+    FW_SRC=
+    for candidate in "/boot/efi/lib/$FW_NAME" "/boot/lib/$FW_NAME" "$FW_DST"; do
+      [ -f "$candidate" ] && { FW_SRC="$candidate"; break; }
+    done
+    [ -z "$FW_SRC" ] && FW_SRC="$(find /boot /boot/efi -path "*/$FW_NAME" -type f 2>/dev/null | head -n 1)"
+    [ -n "$FW_SRC" ] && [ -f "$FW_SRC" ] && install -D -m 0644 "$FW_SRC" "$FW_DST"
+    [ -f "$FW_DST" ] || { echo "PS5 IW620 firmware not found; skipping"; exit 0; }
+    modprobe -r moal mlan 2>/dev/null || true
+    modprobe cfg80211 || true
+    modprobe moal
+    rfkill unblock all 2>/dev/null || true
+    nmcli radio wifi on 2>/dev/null || true
+    EOF
+    chmod 0755 /usr/local/sbin/ps5-iw620-load
+    cat > /etc/systemd/system/ps5-iw620.service <<'EOF'
+    [Unit]
+    Description=Load PS5 IW620 internal WiFi
+    RequiresMountsFor=/boot/efi
+    Wants=systemd-udev-settle.service
+    After=local-fs.target systemd-udev-settle.service
+    Before=NetworkManager.service network-pre.target
+
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/local/sbin/ps5-iw620-load
+    RemainAfterExit=yes
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    depmod -a "$KVER"
+    systemctl enable ps5-iw620.service
+    rm -rf "$IW620_SRC" "$IW620_PATCHES"

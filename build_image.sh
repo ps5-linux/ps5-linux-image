@@ -17,7 +17,7 @@ usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, kali, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, kali, fedora, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all, 98304 for kali)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
@@ -69,7 +69,7 @@ if [ "$DISTRO" = "kali" ] && [ "$IMG_SIZE" = "12000" ]; then
 fi
 
 if [ -z "$FORMAT" ]; then
-    case "$DISTRO" in arch|cachyos) FORMAT="arch" ;; all) FORMAT="all" ;; *) FORMAT="deb" ;; esac
+    case "$DISTRO" in arch|cachyos) FORMAT="arch" ;; fedora) FORMAT="rpm" ;; all) FORMAT="all" ;; *) FORMAT="deb" ;; esac
 fi
 
 KERNEL_BUILDER_PLATFORM="linux/amd64"
@@ -109,6 +109,7 @@ SKIP_CHROOT=false
 
 case "$FORMAT" in
     arch) ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
+    rpm)  ls "$KERNEL_OUT"/*.rpm 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
     all)  ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && \
           ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
     *)    ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
@@ -279,7 +280,7 @@ else
 
     KERNEL_SRC="$(cd "$KERNEL_SRC" && pwd)"
 
-    rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst
+    rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst "$KERNEL_OUT"/*.rpm
 
     run_stage "Build kernel builder image" \
         docker build --platform "$KERNEL_BUILDER_PLATFORM" -t ps5-kernel-builder \
@@ -312,6 +313,16 @@ else
             docker run --rm --name "$DOCKER_NAME" \
                 -v "$KERNEL_OUT":/out \
                 ps5-kernel-packager-arch
+    esac
+
+    case "$FORMAT" in rpm)
+        run_stage "Build rpm packager image" \
+            docker build -t ps5-kernel-packager-rpm \
+                -f "$SCRIPT_DIR/docker/kernel-builder-rpm/Dockerfile" "$SCRIPT_DIR"
+        run_stage "Package kernel (.rpm)" \
+            docker run --rm --name "$DOCKER_NAME" \
+                -v "$KERNEL_OUT":/out \
+                ps5-kernel-packager-rpm
     esac
 fi
 

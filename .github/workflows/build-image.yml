@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos, kali]
+        options: [all, ubuntu2604, arch, cachyos, kali, fedora]
   workflow_call:
     inputs:
       distro:
@@ -34,7 +34,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["kali","ubuntu2604","arch","cachyos"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["kali","ubuntu2604","arch","cachyos","fedora"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -160,6 +160,9 @@ jobs:
             echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
             if [ -f meta/kali.sha256 ]; then
               echo "| Kali | [\`ps5-kali.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-kali.img.xz) |"
+            fi
+            if [ -f meta/fedora.sha256 ]; then
+              echo "| Fedora 44 | [\`ps5-fedora.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-fedora.img.xz) |"
             fi
             echo ""
             echo "**SHA256 checksums:**"

@@ -1,6 +1,6 @@
 # PS5 Linux Image Builder
 
-Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), and full Kali Linux, individually or as a multi-distro image with kexec switching.
+Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), Fedora (GNOME), and full Kali Linux, individually or as a multi-distro image with kexec switching.
 
 ## Prerequisites
 
@@ -31,6 +31,11 @@ OR
 
 # Build Kali Linux (XFCE + kali-linux-everything)
 ./build_image.sh --distro kali
+
+OR
+
+# Build Fedora (GNOME desktop)
+./build_image.sh --distro fedora
 
 OR
 
@@ -118,7 +123,7 @@ can use noticeable CPU time while it runs.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `kali`, or `all` | `ubuntu2604` |
+| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `kali`, `fedora`, or `all` | `ubuntu2604` |
 | `--kernel` | Path to kernel source directory | auto-clone version selected by PS5 patch set |
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`, `98304` for `kali`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
