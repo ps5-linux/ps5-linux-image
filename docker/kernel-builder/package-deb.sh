@@ -20,7 +20,10 @@ cp -a "$STAGING/lib/modules/$KVER" "$PKG/lib/modules/"
 
 # Kernel headers (for out-of-tree module builds)
 if [ -d "$STAGING/headers" ]; then
-    cp -a "$STAGING/headers/usr" "$PKG/usr"
+    # $PKG/usr may already exist from other staged files, so merge contents
+    # instead of creating a nested usr/usr/include/ directory.
+    mkdir -p "$PKG/usr"
+    cp -a "$STAGING/headers/usr/." "$PKG/usr/"
     # Point /lib/modules/$KVER/build at the installed headers
     HDR_DEST="/usr/lib/modules/$KVER/build"
     mkdir -p "$PKG/usr/lib/modules/$KVER"

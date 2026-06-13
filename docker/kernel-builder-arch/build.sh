@@ -31,7 +31,9 @@ cp -a "/out/staging/lib/modules/$KVER" "$STAGING/usr/lib/modules/"
 # Kernel headers (for out-of-tree module builds)
 if [ -d /out/staging/headers ]; then
     # UAPI headers (/usr/include/linux/, /usr/include/asm/, etc.)
-    cp -a /out/staging/headers/usr "$STAGING/usr"
+    # $STAGING/usr already exists (modules were copied there), so merge
+    # contents instead of creating a nested usr/usr/include/ directory.
+    cp -a /out/staging/headers/usr/. "$STAGING/usr/"
     # Build headers (/usr/lib/modules/$KVER/build/)
     mkdir -p "$STAGING/usr/lib/modules/$KVER"
     cp -a /out/staging/headers/lib/modules/$KVER/build "$STAGING/usr/lib/modules/$KVER/build"
