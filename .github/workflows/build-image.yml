@@ -139,41 +139,94 @@ jobs:
 
       - name: Prepare release body
         id: body
-        run: |
-          KVER=$(cat meta/kver)
-          PSHA=$(cat meta/psha)
-          TS=$(cat meta/ts)
-          SUMS=$(cat meta/*.sha256)
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
 
-          {
-            echo 'text<<EOF'
-            echo "PS5 Linux images — built from latest \`main\`."
-            echo ""
-            echo "Kernel: \`$KVER\`"
-            echo "Patches: [\`$PSHA\`](https://github.com/ps5-linux/ps5-linux-patches/commit/$PSHA)"
-            echo "Built: \`$TS\`"
-            echo ""
-            echo "| Image | Download |"
-            echo "|-------|----------|"
-            echo "| Ubuntu 26.04 | [\`ps5-ubuntu2604.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-ubuntu2604.img.xz) |"
-            echo "| Arch | [\`ps5-arch.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-arch.img.xz) |"
-            echo "| CachyOS | [\`ps5-cachyos.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-cachyos.img.xz) |"
-            if [ -f meta/kali.sha256 ]; then
-              echo "| Kali | [\`ps5-kali.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-kali.img.xz) |"
-            fi
-            if [ -f meta/fedora.sha256 ]; then
-              echo "| Fedora 44 | [\`ps5-fedora.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-fedora.img.xz) |"
-            fi
-            if [ -f meta/proxmox.sha256 ]; then
-              echo "| Proxmox VE 8 | [\`ps5-proxmox.img.xz\`](https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev/ps5-proxmox.img.xz) |"
-            fi
-            echo ""
-            echo "**SHA256 checksums:**"
-            echo "\`\`\`"
-            echo "$SUMS"
-            echo "\`\`\`"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+            const kver = fs.readFileSync('meta/kver', 'utf8').trim();
+            const psha = fs.readFileSync('meta/psha', 'utf8').trim();
+            const ts   = fs.readFileSync('meta/ts',   'utf8').trim();
+
+            // Collect new checksums from this run
+            const newSums = {};
+            for (const f of fs.readdirSync('meta').filter(f => f.endsWith('.sha256'))) {
+              const distro = f.replace('.sha256', '');
+              newSums[distro] = fs.readFileSync(path.join('meta', f), 'utf8').trim();
+            }
+
+            // All known distros and their display names (order = table order)
+            const R2 = 'https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev';
+            const ALL_DISTROS = [
+              { key: 'ubuntu2604', label: 'Ubuntu 26.04', file: 'ps5-ubuntu2604.img.xz' },
+              { key: 'arch',       label: 'Arch',         file: 'ps5-arch.img.xz' },
+              { key: 'cachyos',    label: 'CachyOS',      file: 'ps5-cachyos.img.xz' },
+              { key: 'kali',       label: 'Kali',         file: 'ps5-kali.img.xz' },
+              { key: 'fedora',     label: 'Fedora 44',    file: 'ps5-fedora.img.xz' },
+              { key: 'proxmox',    label: 'Proxmox VE 8', file: 'ps5-proxmox.img.xz' },
+              { key: 'debian',     label: 'Debian 12',    file: 'ps5-debian.img.xz' },
+            ];
+
+            // Fetch existing release body to preserve distros not built this run
+            const existingSums = {};
+            try {
+              const { data: rel } = await github.rest.repos.getReleaseByTag({
+                ...context.repo, tag: 'latest',
+              });
+              // Extract existing checksum lines (format: "hash  filename")
+              const sumBlock = (rel.body || '').match(/```\n([\s\S]*?)```/);
+              if (sumBlock) {
+                for (const line of sumBlock[1].trim().split('\n')) {
+                  const m = line.match(/^(\w+)\s+ps5-(\S+)\.img\.xz$/);
+                  if (m) existingSums[m[2]] = line.trim();
+                }
+              }
+              // Also preserve distros that appear in the table even without checksums
+              for (const d of ALL_DISTROS) {
+                if (rel.body && rel.body.includes(d.file) && !existingSums[d.key]) {
+                  existingSums[d.key] = '';
+                }
+              }
+            } catch (e) {
+              core.info('No existing release found, starting fresh');
+            }
+
+            // Merge: new checksums override existing ones
+            const mergedSums = { ...existingSums };
+            for (const [k, v] of Object.entries(newSums)) {
+              mergedSums[k] = v;
+            }
+
+            // Build the table — only include distros that have been built at least once
+            const rows = ALL_DISTROS
+              .filter(d => d.key in mergedSums || d.key in newSums)
+              .map(d => `| ${d.label} | [\`${d.file}\`](${R2}/${d.file}) |`);
+
+            // Combine all checksum lines
+            const allSumLines = ALL_DISTROS
+              .filter(d => mergedSums[d.key])
+              .map(d => mergedSums[d.key])
+              .join('\n');
+
+            const body = [
+              'PS5 Linux images — built from latest `main`.',
+              '',
+              `Kernel: \`${kver}\``,
+              `Patches: [\`${psha}\`](https://github.com/ps5-linux/ps5-linux-patches/commit/${psha})`,
+              `Built: \`${ts}\``,
+              '',
+              '| Image | Download |',
+              '|-------|----------|',
+              ...rows,
+              '',
+              '**SHA256 checksums:**',
+              '```',
+              allSumLines,
+              '```',
+            ].join('\n');
+
+            core.setOutput('text', body);
 
       - name: Move latest tag to current commit
         uses: actions/github-script@v8
