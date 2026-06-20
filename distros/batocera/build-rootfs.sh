@@ -13,6 +13,10 @@
 
 set -ex
 
+: "${CHROOT:?ERROR: \$CHROOT unset/empty}"
+[ -d "$CHROOT" ] || { echo "ERROR: \$CHROOT=$CHROOT not a directory"; exit 2; }
+case "$CHROOT" in /) echo "ERROR: refuse to operate on /"; exit 2 ;; esac
+
 # Batocera is a Buildroot-based emulation distro. It ships as a
 # single .img.gz with FAT32 boot + ext4 SHARE partitions; the OS
 # itself lives in a squashfs file (`/boot/batocera`) on the FAT32.

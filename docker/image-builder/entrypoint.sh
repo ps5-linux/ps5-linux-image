@@ -32,8 +32,12 @@ elif [ -x "/repo/distros/${DISTRO}/build-rootfs.sh" ]; then
     # bypassed entirely. Most often used for OCI atomic images (bazzite via
     # skopeo+umoci) or pre-built rootfs images (batocera squashfs).
     echo "=== Building $DISTRO rootfs via distros/${DISTRO}/build-rootfs.sh ==="
+    [ -n "$CHROOT" ] || { echo "FATAL: \$CHROOT empty"; exit 1; }
+    mkdir -p "$CHROOT"
     rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
-    bash "/repo/distros/${DISTRO}/build-rootfs.sh"
+    DISTRO="$DISTRO" CHROOT="$CHROOT" KVER="$KVER" \
+        ROOT_LABEL="$ROOT_LABEL" EFI_LABEL="$EFI_LABEL" \
+        bash "/repo/distros/${DISTRO}/build-rootfs.sh"
 else
     echo "=== Building $DISTRO rootfs ==="
     # --- Stage files for distrobuilder's copy generators ---
