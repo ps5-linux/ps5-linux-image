@@ -11,6 +11,10 @@
 
 set -ex
 
+: "${CHROOT:?ERROR: \$CHROOT unset/empty}"
+[ -d "$CHROOT" ] || { echo "ERROR: \$CHROOT=$CHROOT not a directory"; exit 2; }
+case "$CHROOT" in /) echo "ERROR: refuse to operate on /"; exit 2 ;; esac
+
 # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
 # DISTRO=bazzite      -> ghcr.io/ublue-os/bazzite:stable
 # DISTRO=bazzite-deck -> ghcr.io/ublue-os/bazzite-deck:stable
