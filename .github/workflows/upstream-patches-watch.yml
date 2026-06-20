@@ -1,0 +1,73 @@
+name: Upstream patches watch
+run-name: Watch ps5-linux-patches for new kernel-* tags
+
+# Polls https://github.com/ps5-linux/ps5-linux-patches for new
+# kernel-X.Y.Z-<sha> tags. If a newer one exists than build_image.sh's
+# PATCHES_REF, bump it and push to main. The push to main fires
+# trigger-builds.yml on its own (push event) so we don't need to dispatch.
+#
+# Runs daily at 04:00 UTC and on demand. Skips the bump if PATCHES_REPO has
+# been forked away from the canonical ps5-linux URL (i.e. local kernel fixes
+# are carried in a fork — overwriting the pinned ref would clobber them).
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare upstream latest vs current PATCHES_REF
+        id: cmp
+        run: |
+          set -euo pipefail
+          REPO=$(grep -E '^PATCHES_REPO=' build_image.sh | head -1 | cut -d'"' -f2)
+          if [ "$REPO" != "https://github.com/ps5-linux/ps5-linux-patches.git" ]; then
+            echo "PATCHES_REPO is a fork ($REPO) — skipping auto-bump."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LATEST=$(git ls-remote --tags https://github.com/ps5-linux/ps5-linux-patches.git \
+            | grep -oE 'kernel-[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]+' \
+            | sort -V \
+            | tail -1)
+          if [ -z "$LATEST" ]; then
+            echo "no kernel-*-* tags found upstream"; exit 1
+          fi
+          CUR=$(grep -E '^PATCHES_REF=' build_image.sh | head -1 | cut -d'"' -f2)
+          echo "upstream latest: $LATEST"
+          echo "current ref:     $CUR"
+          echo "latest=$LATEST"  >> "$GITHUB_OUTPUT"
+          echo "current=$CUR"    >> "$GITHUB_OUTPUT"
+          if [ "$LATEST" = "$CUR" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true"  >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump + commit + push
+        if: steps.cmp.outputs.stale == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          LATEST: ${{ steps.cmp.outputs.latest }}
+          CUR: ${{ steps.cmp.outputs.current }}
+        run: |
+          set -euo pipefail
+          sed -i "s|^PATCHES_REF=\"${CUR}\"|PATCHES_REF=\"${LATEST}\"|" build_image.sh
+          git config user.name  "ps5-linux-bot"
+          git config user.email "ps5-linux-bot@users.noreply.github.com"
+          git add build_image.sh
+          git commit -m "kernel: auto-bump ${CUR} -> ${LATEST} (upstream watch)"
+          git push "https://x-access-token:${TOKEN}@github.com/${REPO}.git" HEAD:main
+          # Push to main fires trigger-builds.yml automatically (it's
+          # on: push branches: [main]), which calls build-image.yml with
+          # distro=all. No manual dispatch needed.
+          echo "pushed bump to ${LATEST}; trigger-builds.yml will fire on the push event"
