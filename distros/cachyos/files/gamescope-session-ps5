@@ -19,10 +19,17 @@
 export LIBSEAT_BACKEND=logind
 export WLR_LIBINPUT_NO_DEVICES=1
 
+# Launch flags:
+#   -gamepadui  : controller-friendly Steam UI (Big Picture-like)
+#   NOT -steamos3 : would enable SteamOS atomic-OS-update polling. CachyOS is
+#                   pacman-rolling, no atomupd manifest server, so Steam loops
+#                   "Updater apply error: 2: null" and the OOBE blocks on the
+#                   "Software updates" step. (Field-reported by users.) Use
+#                   `sudo pacman -Syu` for OS updates.
 exec /usr/bin/gamescope \
     --backend drm \
     -e \
     --prefer-output DP-1 \
     --sdr-gamut-wideness 0 \
     -- \
-    /usr/bin/steam -gamepadui -steamos3
+    /usr/bin/steam -gamepadui
