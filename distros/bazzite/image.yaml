@@ -1,0 +1,13 @@
+# Bazzite is an ostree/OCI atomic image — distrobuilder doesn't handle it.
+# This yaml is a placeholder for documentation; the actual build is custom
+# in docker/image-builder/entrypoint.sh under the `bazzite*)` case (skopeo
+# pull + umoci unpack + dnf-install our PS5 kernel RPM).
+image:
+  name: ps5-bazzite
+  distribution: bazzite
+  release: stable
+  description: Bazzite (uBlue gaming Fedora) with PS5 kernel — ostree-flattened
+  architecture: x86_64
+
+# Source ref consumed by entrypoint.sh:
+# upstream_ref: ghcr.io/ublue-os/bazzite:stable

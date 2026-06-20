@@ -1,0 +1,1 @@
+../bazzite/build-rootfs.sh

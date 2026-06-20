@@ -17,7 +17,7 @@ usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, fedora, proxmox, debian, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck, batocera, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
@@ -65,8 +65,31 @@ if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
     IMG_SIZE=32000
 fi
 
+# Bazzite assembles the OCI rootfs + an embedded /sysroot/ostree/repo/objects
+# (a deduplicated second copy of the same content) + the linux-ps5 kernel —
+# 12 GB is not enough headroom. Bump the default for any bazzite* target.
+# Batocera unsquashes to ~6 GB; 12 GB is tight once kernel + initrd +
+# /userdata defaults are added. Bump to 16 GB.
+case "$DISTRO" in
+    bazzite*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=24000
+        fi
+        ;;
+    batocera*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=16000
+        fi
+        ;;
+esac
+
 if [ -z "$FORMAT" ]; then
-    case "$DISTRO" in arch|cachyos) FORMAT="arch" ;; fedora) FORMAT="rpm" ;; all) FORMAT="all" ;; *) FORMAT="deb" ;; esac
+    case "$DISTRO" in
+        arch|cachyos)        FORMAT="arch" ;;
+        fedora|bazzite*)     FORMAT="rpm"  ;;
+        all)                 FORMAT="all"  ;;
+        *)                   FORMAT="deb"  ;;
+    esac
 fi
 
 KERNEL_BUILDER_PLATFORM="linux/amd64"

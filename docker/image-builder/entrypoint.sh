@@ -10,8 +10,30 @@ EFI_LABEL="boot"
 CHROOT="/build/chroot"
 IMG="/output/ps5-${DISTRO}.img"
 
+# Detect kernel version from the staged kernel package (used by bazzite +
+# batocera rootfs builders which install the linux-ps5 kernel manually).
+detect_kver() {
+    for f in /kernel-debs/linux-ps5-*.rpm /kernel-debs/linux-ps5_*.deb \
+             /kernel-debs/linux-ps5-*.pkg.tar.zst; do
+        [ -f "$f" ] || continue
+        echo "$(basename "$f")" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+        return 0
+    done
+}
+KVER="$(detect_kver)"
+[ -n "$KVER" ] || { echo "WARN: could not detect KVER from /kernel-debs/"; }
+export KVER
+
 if [ "$SKIP_CHROOT" = "true" ] && [ -d "$CHROOT/bin" ]; then
     echo "=== Reusing cached $DISTRO rootfs ==="
+elif [ -x "/repo/distros/${DISTRO}/build-rootfs.sh" ]; then
+    # Distros with their own build-rootfs.sh (bazzite, bazzite-deck, batocera, ...)
+    # are responsible for populating $CHROOT themselves — distrobuilder is
+    # bypassed entirely. Most often used for OCI atomic images (bazzite via
+    # skopeo+umoci) or pre-built rootfs images (batocera squashfs).
+    echo "=== Building $DISTRO rootfs via distros/${DISTRO}/build-rootfs.sh ==="
+    rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
+    bash "/repo/distros/${DISTRO}/build-rootfs.sh"
 else
     echo "=== Building $DISTRO rootfs ==="
     # --- Stage files for distrobuilder's copy generators ---
@@ -139,7 +161,17 @@ cp -a "$CHROOT"/* /tmp/usb_root/
 sync
 
 echo "=== Assembling boot partition ==="
-mv /tmp/usb_root/boot/efi/* /tmp/usb_efi/ 2>/dev/null || true
+# Batocera mounts the FAT32 partition at /boot (not /boot/efi) so its
+# batocera-part SHARE auto-detection works (greps /proc/mounts for /boot).
+# Detect either layout and copy from the right place.
+if [ -d /tmp/usb_root/boot/efi ] && [ -n "$(ls -A /tmp/usb_root/boot/efi 2>/dev/null)" ]; then
+    mv /tmp/usb_root/boot/efi/* /tmp/usb_efi/ 2>/dev/null || true
+elif [ -f /tmp/usb_root/boot/bzImage ]; then
+    # batocera-style: bzImage + cmdline + everything else lives directly
+    # in /boot. Move everything into the EFI partition so the PS5 loader
+    # can find bzImage/initrd.img/cmdline.txt at the FAT root.
+    mv /tmp/usb_root/boot/* /tmp/usb_efi/ 2>/dev/null || true
+fi
 CMDLINE_TEMPLATE="/repo/distros/${DISTRO}/cmdline.txt"
 [ -f "$CMDLINE_TEMPLATE" ] || CMDLINE_TEMPLATE="/repo/boot/cmdline.txt"
 sed "s|__DISTRO__|$ROOT_LABEL|" "$CMDLINE_TEMPLATE" > /tmp/usb_efi/cmdline.txt
