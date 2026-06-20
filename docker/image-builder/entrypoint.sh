@@ -10,10 +10,6 @@ EFI_LABEL="boot"
 CHROOT="/build/chroot"
 IMG="/output/ps5-${DISTRO}.img"
 
-if [ "$DISTRO" = "kali" ]; then
-    ROOT_LABEL="kali-root"
-fi
-
 if [ "$SKIP_CHROOT" = "true" ] && [ -d "$CHROOT/bin" ]; then
     echo "=== Reusing cached $DISTRO rootfs ==="
 else
@@ -37,12 +33,6 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
-            ;;
-        kali)
-            cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"
-            cp /repo/distros/${DISTRO}/grow-rootfs.service  "$STAGING/"
-            cp /repo/distros/${DISTRO}/kali-archive-keyring.asc "$STAGING/"
-            cp /kernel-debs/*.deb                           "$STAGING/debs/"
             ;;
         proxmox)
             cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"

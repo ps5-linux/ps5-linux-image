@@ -17,9 +17,9 @@ usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, kali, fedora, proxmox, debian, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, fedora, proxmox, debian, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
-    echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all, 98304 for kali)"
+    echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
     echo "  --clean-only Remove all cached build artifacts and exit"
     echo "  --kernel-only  Build and package the kernel only, then exit"
@@ -63,9 +63,6 @@ DOCKER_NAME="ps5-build-$$"
 
 if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
     IMG_SIZE=32000
-fi
-if [ "$DISTRO" = "kali" ] && [ "$IMG_SIZE" = "12000" ]; then
-    IMG_SIZE=98304
 fi
 
 if [ -z "$FORMAT" ]; then
