@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential bc bison dwarves flex kmod cpio gawk \
     libdw-dev libelf-dev libssl-dev \
     python3 rsync dpkg-dev debhelper zstd \
-    perl git xz-utils ccache \
+    perl git ca-certificates xz-utils ccache \
     gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu libc6-dev-amd64-cross \
     && rm -rf /var/lib/apt/lists/*
 
