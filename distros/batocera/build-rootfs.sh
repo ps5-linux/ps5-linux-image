@@ -22,9 +22,28 @@ case "$CHROOT" in /) echo "ERROR: refuse to operate on /"; exit 2 ;; esac
 # itself lives in a squashfs file (`/boot/batocera`) on the FAT32.
 # We unsquash, swap our PS5 kernel + modules in, and let the rest
 # of the standard image-builder flow pack everything onto ext4.
-BATOCERA_VER="${BATOCERA_VER:-43}"
-BATOCERA_BUILD="${BATOCERA_BUILD:-20260430}"
-BATOCERA_URL="${BATOCERA_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/last/batocera-x86_64-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz}"
+# `last/` always points at the current build, but the .img.gz filename
+# inside it bakes in the version + date (e.g. batocera-x86_64-43.1-20260529.img.gz),
+# and the mirror rotates older builds out. Scrape the index to discover
+# whatever's there today rather than hardcoding (the previous hardcoded
+# 43-20260430 went 404 within ~4 weeks).
+BATOCERA_INDEX_URL="${BATOCERA_INDEX_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/last/}"
+if [ -z "${BATOCERA_URL:-}" ]; then
+    IMG_NAME=$(wget -qO- "$BATOCERA_INDEX_URL" \
+        | grep -oE 'batocera-x86_64-[0-9.]+-[0-9]+\.img\.gz' \
+        | head -1)
+    if [ -z "$IMG_NAME" ]; then
+        echo "ERROR: couldn't find a batocera-x86_64-*.img.gz link at $BATOCERA_INDEX_URL"
+        exit 1
+    fi
+    BATOCERA_URL="${BATOCERA_INDEX_URL}${IMG_NAME}"
+else
+    IMG_NAME="$(basename "$BATOCERA_URL")"
+fi
+# Pull VER + BUILD out of the discovered (or overridden) filename so the
+# cache key + log lines stay informative.
+BATOCERA_VER=$(echo "$IMG_NAME"  | sed -E 's/^batocera-x86_64-([0-9.]+)-[0-9]+\.img\.gz$/\1/')
+BATOCERA_BUILD=$(echo "$IMG_NAME" | sed -E 's/^batocera-x86_64-[0-9.]+-([0-9]+)\.img\.gz$/\1/')
 
 echo "=== Batocera: locate / download $BATOCERA_VER ($BATOCERA_BUILD) ==="
 # /build/cache is per-run temp. The workflow symlinks /build/cache/
