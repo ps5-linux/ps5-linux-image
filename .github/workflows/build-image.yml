@@ -63,7 +63,28 @@ jobs:
             echo "Invalid GITHUB_WORKSPACE" >&2
             exit 1
           fi
-          sudo rm -rf "$GITHUB_WORKSPACE/image"
+          # A previous run can leave loop mounts (kpartx / losetup -P) and
+          # bind mounts (distrobuilder chroots) live inside image/work/.
+          # rm -rf then trips on "Directory not empty" because it can't
+          # cross the mountpoint. Unmount everything under the workspace
+          # first, then detach any loop devices still backed by files in
+          # the workspace, then rm.
+          WS="$GITHUB_WORKSPACE"
+          # Lazy-unmount any mount whose target is under the workspace.
+          # Reverse order so deepest mounts go first.
+          for m in $(findmnt -rn -o TARGET | grep "^$WS/" | sort -r || true); do
+            echo "unmounting stale $m"
+            sudo umount -l "$m" || true
+          done
+          # Detach any loop device whose backing file lives under the
+          # workspace (or shows '(deleted)' against one — that means the
+          # backing file was removed but the loop wasn't released).
+          for l in $(sudo losetup -l --noheadings -O NAME,BACK-FILE 2>/dev/null \
+                     | awk -v ws="$WS" '$2 ~ "^"ws || $2 ~ ws"/" || $2 ~ "\\(deleted\\)$" {print $1}'); do
+            echo "detaching stale loop $l"
+            sudo losetup -d "$l" || true
+          done
+          sudo rm -rf "$WS/image"
 
       - name: Checkout image builder
         uses: actions/checkout@v6
