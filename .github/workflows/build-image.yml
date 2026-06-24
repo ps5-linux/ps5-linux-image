@@ -180,12 +180,14 @@ jobs:
             // All known distros and their display names (order = table order)
             const R2 = 'https://pub-561df4012f1a46fbbdf618d5cc5941f6.r2.dev';
             const ALL_DISTROS = [
-              { key: 'ubuntu2604', label: 'Ubuntu 26.04', file: 'ps5-ubuntu2604.img.xz' },
-              { key: 'arch',       label: 'Arch',         file: 'ps5-arch.img.xz' },
-              { key: 'cachyos',    label: 'CachyOS',      file: 'ps5-cachyos.img.xz' },
-              { key: 'fedora',     label: 'Fedora 44',    file: 'ps5-fedora.img.xz' },
-              { key: 'proxmox',    label: 'Proxmox VE 8', file: 'ps5-proxmox.img.xz' },
-              { key: 'debian',     label: 'Debian 12',    file: 'ps5-debian.img.xz' },
+              { key: 'ubuntu2604',   label: 'Ubuntu 26.04',         file: 'ps5-ubuntu2604.img.xz' },
+              { key: 'arch',         label: 'Arch',                 file: 'ps5-arch.img.xz' },
+              { key: 'cachyos',      label: 'CachyOS',              file: 'ps5-cachyos.img.xz' },
+              { key: 'fedora',       label: 'Fedora 44',            file: 'ps5-fedora.img.xz' },
+              { key: 'proxmox',      label: 'Proxmox VE 8',         file: 'ps5-proxmox.img.xz' },
+              { key: 'debian',       label: 'Debian 12',            file: 'ps5-debian.img.xz' },
+              { key: 'bazzite',      label: 'Bazzite (KDE gaming)', file: 'ps5-bazzite.img.xz' },
+              { key: 'bazzite-deck', label: 'Bazzite Deck UI',      file: 'ps5-bazzite-deck.img.xz' },
             ];
 
             // Fetch existing release body to preserve distros not built this run
