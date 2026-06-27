@@ -43,6 +43,10 @@ packages:
     - konsole
     - dolphin
 
+    # Bluetooth
+    - bluez
+    - bluez-utils
+
     # Audio / media
     - pipewire
     - wireplumber
@@ -229,6 +233,8 @@ actions:
     mkdir -p /etc/systemd/system/local-fs.target.wants
     ln -sf /etc/systemd/system/grow-rootfs.service \
       /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
+
+    systemctl enable bluetooth.service
 
     # Stub out steamos-update so Steam's -steamos3 OOBE skips the SteamOS OTA
     # step cleanly. Exit 7 = "no update available" per Valve's convention.

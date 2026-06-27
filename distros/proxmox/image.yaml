@@ -45,6 +45,11 @@ packages:
     - libelf-dev
     - git
 
+    # Bluetooth
+    - bluetooth
+    - bluez
+    - bluez-tools
+
     # Networking (Proxmox uses ifupdown2 + a vmbr0 bridge)
     - ifupdown2
     - openssh-server
@@ -219,6 +224,7 @@ actions:
     systemctl set-default multi-user.target
     systemctl enable ssh.service || true
     systemctl enable chrony || true
+    systemctl enable bluetooth.service || true
 
     # zram swap: half of RAM, zstd compressed
     printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf

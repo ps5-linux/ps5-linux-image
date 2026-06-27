@@ -35,6 +35,10 @@ packages:
     - wl-clipboard
     - xorg-xwayland
 
+    # Bluetooth
+    - bluez
+    - bluez-utils
+
     # Audio / media
     - pipewire
     - wireplumber
@@ -165,6 +169,8 @@ actions:
     mkdir -p /etc/systemd/system/local-fs.target.wants
     ln -sf /etc/systemd/system/grow-rootfs.service \
       /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
+
+    systemctl enable bluetooth.service
 
     # Create default user (ps5/ps5)
     useradd -m -G wheel,seat -s /bin/bash ps5

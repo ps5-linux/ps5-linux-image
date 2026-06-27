@@ -36,6 +36,9 @@ packages:
     - openssh-server
     - build-essential
     - network-manager
+    - bluetooth
+    - bluez
+    - bluez-tools
     - linux-firmware
     - initramfs-tools
     - kmod
@@ -132,6 +135,7 @@ actions:
     set -eux
     systemctl enable grow-rootfs.service
     systemctl enable systemd-resolved
+    systemctl enable bluetooth.service
     mkdir -p /boot/efi
     # Disable kdump postinst hook — it fails in chroot (can't resolve root device)
     rm -f /etc/kernel/postinst.d/kdump-tools

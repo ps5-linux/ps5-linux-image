@@ -45,6 +45,10 @@ packages:
     - xorg-x11-server-Xwayland
     - polkit
 
+    # Bluetooth
+    - bluez
+    - bluez-tools
+
     # Audio / media
     - pipewire
     - wireplumber
@@ -148,6 +152,7 @@ actions:
     systemctl enable sshd
     systemctl enable NetworkManager
     systemctl enable gdm
+    systemctl enable bluetooth.service
     systemctl set-default graphical.target
 
     # The PS5 kernel patch writes into the request_firmware() buffer to skip

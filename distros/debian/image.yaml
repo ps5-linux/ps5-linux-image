@@ -36,6 +36,11 @@ packages:
     - dbus-x11
     - x11-xserver-utils
 
+    # Bluetooth
+    - bluetooth
+    - bluez
+    - bluez-tools
+
     # Audio / media
     - pipewire
     - pipewire-pulse
@@ -195,6 +200,7 @@ actions:
     systemctl set-default graphical.target
     systemctl enable NetworkManager
     systemctl enable lightdm
+    systemctl enable bluetooth.service
 
     ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
     printf 'Etc/UTC\n' > /etc/timezone
