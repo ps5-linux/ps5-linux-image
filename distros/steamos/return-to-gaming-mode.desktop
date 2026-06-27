@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Return to Gaming Mode
+Comment=Switch the autologin session back to gamescope / Steam Deck UI
+Exec=bash -c 'steamos-session-select gamescope'
+Icon=steamdeck-gaming-return
+Terminal=false
+Categories=System;

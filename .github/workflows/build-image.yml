@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck]
+        options: [all, ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck, steamos]
   workflow_call:
     inputs:
       distro:
@@ -34,7 +34,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","arch","cachyos","fedora","proxmox","debian","bazzite","bazzite-deck"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","arch","cachyos","fedora","proxmox","debian","bazzite","bazzite-deck","steamos"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi

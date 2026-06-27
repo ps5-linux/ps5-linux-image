@@ -1,0 +1,14 @@
+[Unit]
+Description=Translate Steam Big Picture Switch-to-Desktop dbus call into steamos-session-select
+Documentation=https://gist.github.com/Rishikant181/e26fb23d4c57db74bddaa0a57b26cd26
+After=dbus.service sddm.service
+PartOf=sddm.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/steam-session-switch-listener
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
