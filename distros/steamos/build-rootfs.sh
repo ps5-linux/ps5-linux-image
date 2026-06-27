@@ -25,7 +25,8 @@ case "$CHROOT" in /) echo "ERROR: refuse to operate on /"; exit 2 ;; esac
 STEAMOS_URL="${STEAMOS_URL:-https://steamdeck-images.steamos.cloud/recovery/steamdeck-repair-latest.img.bz2}"
 
 echo "=== SteamOS: resolve latest image URL ==="
-RESOLVED_URL=$(curl -sIL -o /dev/null -w '%{url_effective}' "$STEAMOS_URL")
+# python3 is in the upstream image-builder Dockerfile; curl isn't.
+RESOLVED_URL=$(python3 -c "import urllib.request; print(urllib.request.urlopen('$STEAMOS_URL').geturl())")
 IMG_NAME=$(basename "$RESOLVED_URL")
 echo ">> resolved $IMG_NAME"
 
