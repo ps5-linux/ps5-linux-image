@@ -138,7 +138,10 @@ echo "=== SteamOS: install linux-ps5 kernel pkg ==="
 PKG=$(ls /kernel-debs/linux-ps5-*.pkg.tar.zst 2>/dev/null | head -1)
 [ -z "$PKG" ] && { echo "ERROR: no linux-ps5 pkg.tar.zst in /kernel-debs/"; exit 1; }
 TMP=$(mktemp -d)
-bsdtar -xf "$PKG" -C "$TMP"
+# Upstream image-builder doesn't ship libarchive-tools (bsdtar). GNU tar
+# 1.32+ handles .pkg.tar.zst via --zstd; image-builder runs Ubuntu 24.04
+# with tar 1.35.
+tar --zstd -xf "$PKG" -C "$TMP"
 for d in usr boot etc; do
     [ -d "$TMP/$d" ] && cp -a "$TMP/$d"/. "$CHROOT/$d/" 2>/dev/null || true
 done
