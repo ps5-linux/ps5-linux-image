@@ -26,6 +26,8 @@ jobs:
 
       - name: Compare upstream latest vs current PATCHES_REF
         id: cmp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           REPO=$(grep -E '^PATCHES_REPO=' build_image.sh | head -1 | cut -d'"' -f2)
@@ -34,10 +36,9 @@ jobs:
             echo "stale=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          LATEST=$(git ls-remote --tags https://github.com/ps5-linux/ps5-linux-patches.git \
-            | grep -oE 'kernel-[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]+' \
-            | sort -V \
-            | tail -1)
+          LATEST=$(gh api repos/ps5-linux/ps5-linux-patches/tags --paginate \
+            --jq '.[] | select(.name | test("^kernel-[0-9]+\\.[0-9]+\\.[0-9]+-[a-f0-9]+$")) | .name' \
+            | head -1)
           if [ -z "$LATEST" ]; then
             echo "no kernel-*-* tags found upstream"; exit 1
           fi
