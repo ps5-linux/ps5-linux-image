@@ -32,12 +32,14 @@ jobs:
               return;
             }
 
-            // Tags API returns by commit-date (most recent first).
-            const tags = await github.paginate(github.rest.repos.listTags, {
+            // Releases API returns by published_at (most recent first).
+            // Tags API order is not chronological — hex SHA suffixes sort
+            // alphabetically.
+            const releases = await github.paginate(github.rest.repos.listReleases, {
               owner: 'ps5-linux', repo: 'ps5-linux-patches', per_page: 100,
             });
             const re = /^kernel-\d+\.\d+\.\d+-[a-f0-9]+$/;
-            const latest = tags.find(t => re.test(t.name))?.name;
+            const latest = releases.find(r => re.test(r.tag_name))?.tag_name;
             if (!latest) { core.setFailed('no kernel-*-* tags found'); return; }
 
             const cur = (body.match(/^PATCHES_REF="([^"]+)"/m) || [])[1];
