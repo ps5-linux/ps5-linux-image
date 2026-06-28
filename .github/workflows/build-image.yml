@@ -188,6 +188,7 @@ jobs:
               { key: 'debian',       label: 'Debian 12',            file: 'ps5-debian.img.xz' },
               { key: 'bazzite',      label: 'Bazzite (KDE gaming)', file: 'ps5-bazzite.img.xz' },
               { key: 'bazzite-deck', label: 'Bazzite Deck UI',      file: 'ps5-bazzite-deck.img.xz' },
+              { key: 'steamos',      label: 'SteamOS 3 (Holo)',     file: 'ps5-steamos.img.xz' },
             ];
 
             // Fetch existing release body to preserve distros not built this run
