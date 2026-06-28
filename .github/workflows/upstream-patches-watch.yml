@@ -12,46 +12,49 @@ permissions:
 jobs:
   check:
     runs-on: self-hosted
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REPO: ${{ github.repository }}
     steps:
-      - name: Bump build_image.sh PATCHES_REF if stale
-        run: |
-          set -euo pipefail
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
 
-          # Read build_image.sh from main via API (no checkout — avoids
-          # EACCES on root-owned build artifacts left in the workspace).
-          gh api "repos/${REPO}/contents/build_image.sh?ref=main" \
-            --jq '.content' | base64 -d > build_image.sh
-          SHA=$(gh api "repos/${REPO}/contents/build_image.sh?ref=main" --jq '.sha')
+            // Read build_image.sh from main via API (no checkout — runner
+            // workspace has root-owned build leftovers EACCES checkout).
+            const file = await github.rest.repos.getContent({
+              owner, repo, path: 'build_image.sh', ref: 'main',
+            });
+            const buf = Buffer.from(file.data.content, 'base64');
+            let body = buf.toString();
 
-          REPO_URL=$(grep -E '^PATCHES_REPO=' build_image.sh | head -1 | cut -d'"' -f2)
-          if [ "$REPO_URL" != "https://github.com/ps5-linux/ps5-linux-patches.git" ]; then
-            echo "PATCHES_REPO is a fork ($REPO_URL) — skipping auto-bump."
-            exit 0
-          fi
+            const patchesRepo = (body.match(/^PATCHES_REPO="([^"]+)"/m) || [])[1];
+            if (patchesRepo !== 'https://github.com/ps5-linux/ps5-linux-patches.git') {
+              core.info(`PATCHES_REPO is a fork (${patchesRepo}) — skipping auto-bump.`);
+              return;
+            }
 
-          LATEST=$(gh api repos/ps5-linux/ps5-linux-patches/tags --paginate \
-            --jq '.[] | select(.name | test("^kernel-[0-9]+\\.[0-9]+\\.[0-9]+-[a-f0-9]+$")) | .name' \
-            | head -1)
-          [ -n "$LATEST" ] || { echo "no kernel tags found"; exit 1; }
+            // Tags API returns by commit-date (most recent first).
+            const tags = await github.paginate(github.rest.repos.listTags, {
+              owner: 'ps5-linux', repo: 'ps5-linux-patches', per_page: 100,
+            });
+            const re = /^kernel-\d+\.\d+\.\d+-[a-f0-9]+$/;
+            const latest = tags.find(t => re.test(t.name))?.name;
+            if (!latest) { core.setFailed('no kernel-*-* tags found'); return; }
 
-          CUR=$(grep -E '^PATCHES_REF=' build_image.sh | head -1 | cut -d'"' -f2)
-          echo "upstream latest: $LATEST"
-          echo "current ref:     $CUR"
-          if [ "$LATEST" = "$CUR" ]; then
-            echo "already current — no bump."
-            exit 0
-          fi
+            const cur = (body.match(/^PATCHES_REF="([^"]+)"/m) || [])[1];
+            core.info(`upstream latest: ${latest}`);
+            core.info(`current ref:     ${cur}`);
+            if (latest === cur) { core.info('already current — no bump.'); return; }
 
-          sed -i "s|^PATCHES_REF=\"${CUR}\"|PATCHES_REF=\"${LATEST}\"|" build_image.sh
-          NEW_B64=$(base64 -w0 < build_image.sh)
-          gh api -X PUT "repos/${REPO}/contents/build_image.sh" \
-            -f message="kernel: auto-bump ${CUR} -> ${LATEST}" \
-            -f content="${NEW_B64}" \
-            -f sha="${SHA}" \
-            -f branch=main \
-            -f committer.name="ps5-linux-bot" \
-            -f committer.email="ps5-linux-bot@users.noreply.github.com"
-          echo "pushed bump to ${LATEST}"
+            const updated = body.replace(
+              new RegExp(`^PATCHES_REF="${cur}"`, 'm'),
+              `PATCHES_REF="${latest}"`,
+            );
+            await github.rest.repos.createOrUpdateFileContents({
+              owner, repo, path: 'build_image.sh', branch: 'main',
+              message: `kernel: auto-bump ${cur} -> ${latest}`,
+              content: Buffer.from(updated).toString('base64'),
+              sha: file.data.sha,
+              committer: { name: 'ps5-linux-bot', email: 'ps5-linux-bot@users.noreply.github.com' },
+              author:    { name: 'ps5-linux-bot', email: 'ps5-linux-bot@users.noreply.github.com' },
+            });
+            core.info(`pushed bump to ${latest}`);
