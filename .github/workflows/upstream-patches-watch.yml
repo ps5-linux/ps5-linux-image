@@ -60,3 +60,12 @@ jobs:
               author:    { name: 'ps5-linux-bot', email: 'ps5-linux-bot@users.noreply.github.com' },
             });
             core.info(`pushed bump to ${latest}`);
+
+            // Pushes authored by GITHUB_TOKEN don't fire workflow_run /
+            // push events, so trigger-builds.yml won't auto-run. Kick off
+            // the matrix build directly.
+            await github.rest.actions.createWorkflowDispatch({
+              owner, repo, workflow_id: 'build-image.yml', ref: 'main',
+              inputs: { distro: 'all' },
+            });
+            core.info('dispatched build-image.yml distro=all');
