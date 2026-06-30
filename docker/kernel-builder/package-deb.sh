@@ -18,6 +18,14 @@ cp "$STAGING/System.map"    "$PKG/boot/System.map-$KVER"
 cp "$STAGING/.config"       "$PKG/boot/config-$KVER"
 cp -a "$STAGING/lib/modules/$KVER" "$PKG/lib/modules/"
 
+# Userspace bits the kernel-builder staged at /out/staging/{etc,usr/local}:
+# ps5-stage-firmware service + script (bridges nxp blob from /boot/efi),
+# ps5-iw620 modprobe.d options. Without these the WLAN driver loads but
+# request_firmware() returns -2 and wlan_pcie probe fails.
+for d in etc usr/local; do
+    [ -d "$STAGING/$d" ] && { mkdir -p "$PKG/$d"; cp -a "$STAGING/$d/." "$PKG/$d/"; }
+done
+
 # Kernel headers (for out-of-tree module builds)
 if [ -d "$STAGING/headers" ]; then
     # $PKG/usr may already exist from other staged files, so merge contents
