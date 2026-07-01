@@ -1,14 +1,81 @@
 #!/bin/bash
-# Grows the root partition and filesystem to fill the disk.
-# Runs once on first boot, then disables itself.
+# Grows the root partition + filesystem to fill the disk on first boot.
+# Self-disables after success.
+#
+# Uses sfdisk + partx + resize2fs (all in util-linux + e2fsprogs, both
+# present in the minimal Arch/SteamOS base). Earlier versions called
+# growpart from cloud-utils — but that package isn't in the SteamOS
+# recovery image, so the unit failed with "growpart: command not found"
+# and rootfs stayed at the dd'd image size (~14 GB) on any disk larger
+# than that.
 set -e
 
 ROOT_DEV=$(findmnt -no SOURCE /)
 DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
 PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
 
-parted -s "$DISK" resizepart "$PART_NUM" 100%
-partprobe "$DISK"
+# Our images dd at their built size (~14 GB) onto a much larger USB. The GPT
+# backup header is therefore at byte ~built-size, not at end of disk. Move
+# the backup header to end-of-disk first so partition table growth works.
+sgdisk -e "$DISK"
+
+# If a previous flash left behind partitions BEYOND our rootfs + boot pair
+# (e.g. a stale `linux-home` partset at part 3 from a prior SteamOS install
+# on the same drive), the partition extend refuses to grow into the space
+# already claimed by the leftover partition. Delete every partition with a
+# number higher than 2 — we only ever create partitions 1 (rootfs) + 2 (boot).
+# Important: sgdisk only rewrites the on-disk GPT; we must ALSO drop those
+# stale entries from the kernel's in-memory partition table via partx -d,
+# or BLKPG_RESIZE_PARTITION below returns EBUSY because the kernel still
+# thinks sda1 would have to grow into space owned by phantom sda3.
+for n in $(parted -ms "$DISK" print 2>/dev/null \
+           | awk -F: 'NR>2 && $1+0>2 {print $1}'); do
+    sgdisk -d "$n" "$DISK" 2>/dev/null || true
+    partx -d --nr "$n" "$DISK" 2>/dev/null || true
+done
+
+# sfdisk `,+` extends partition $PART_NUM to consume all available free
+# space. Works on a mounted/live partition because sfdisk only rewrites
+# the GPT entry (kernel re-read of the partition table comes next).
+echo ",+" | sfdisk --no-reread -N "$PART_NUM" "$DISK"
+
+# Make the kernel pick up the new partition size without unmounting via
+# BLKPG_RESIZE_PARTITION. partx -u also uses BLKPG, but on some images
+# (notably SteamOS recovery loop-mounted btrfs) partx returns an error
+# updating the mounted partition; the direct ioctl is more reliable.
+python3 - "$DISK" "$PART_NUM" <<'PY'
+import sys, os, fcntl, ctypes, subprocess
+disk, pno = sys.argv[1], int(sys.argv[2])
+out = subprocess.run(["sfdisk","--bytes","-q","-l",disk],
+                     capture_output=True, text=True, check=True).stdout
+start = sectors = None
+for line in out.splitlines():
+    if line.startswith(f"{disk}{pno} ") or line.startswith(f"{disk}p{pno} "):
+        f = line.split()
+        start, sectors = int(f[1]), int(f[3])
+        break
+if start is None:
+    sys.exit(f"could not parse partition {pno} from sfdisk -l {disk}")
+class P(ctypes.Structure):
+    _fields_=[("start",ctypes.c_longlong),("length",ctypes.c_longlong),
+              ("pno",ctypes.c_int),("devname",ctypes.c_char*64),
+              ("volname",ctypes.c_char*64)]
+class A(ctypes.Structure):
+    _fields_=[("op",ctypes.c_int),("flags",ctypes.c_int),
+              ("datalen",ctypes.c_int),("data",ctypes.c_void_p)]
+p = P(start=start*512, length=sectors*512, pno=pno)
+a = A(op=3, flags=0, datalen=ctypes.sizeof(p), data=ctypes.addressof(p))
+fd = os.open(disk, os.O_RDONLY)
+try:
+    fcntl.ioctl(fd, 0x1269, a)   # BLKPG, BLKPG_RESIZE_PARTITION
+finally:
+    os.close(fd)
+PY
+
+# Belt-and-suspenders: also try partx in case BLKPG via python failed.
+partx -u --nr "$PART_NUM" "$DISK" 2>/dev/null || true
+
+# Online ext4 grow.
 resize2fs "$ROOT_DEV"
 
 systemctl disable grow-rootfs.service
