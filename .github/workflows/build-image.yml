@@ -47,7 +47,7 @@ jobs:
       contents: write
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       max-parallel: 5
       matrix:
         distro: ${{ fromJson(needs.matrix.outputs.distros) }}
