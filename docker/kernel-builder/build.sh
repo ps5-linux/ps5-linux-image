@@ -78,4 +78,85 @@ MPCONF
 # Rebuild module index so modprobe moal works without depmod -a post-install.
 depmod -b /out/staging "$KVER"
 
+# ---- PS5 runtime helpers packaged with the kernel ----
+mkdir -p /out/staging/usr/local/sbin
+mkdir -p /out/staging/etc/systemd/system/sysinit.target.wants
+mkdir -p /out/staging/etc/systemd/system/multi-user.target.wants
+
+cat > /out/staging/usr/local/sbin/ps5-stage-firmware <<'HELPER'
+#!/bin/sh
+set -eu
+FW=nxp/pcieuartiw620_combo_v1.bin
+if [ -f /run/ostree-booted ]; then
+    DST_DIR=/etc/firmware
+    echo "$DST_DIR" > /sys/module/firmware_class/parameters/path 2>/dev/null || true
+else
+    DST_DIR=/lib/firmware
+fi
+DST=$DST_DIR/$FW
+[ -e "$DST" ] || for d in /efi /boot/efi /boot; do
+    if [ -f "$d/lib/$FW" ]; then
+        install -Dm644 "$d/lib/$FW" "$DST"
+        break
+    fi
+done
+modprobe -r moal mlan 2>/dev/null || true
+modprobe moal 2>/dev/null || true
+HELPER
+chmod +x /out/staging/usr/local/sbin/ps5-stage-firmware
+
+cat > /out/staging/etc/systemd/system/ps5-stage-firmware.service <<'UNIT'
+[Unit]
+Description=Stage PS5 NXP IW620 wifi firmware from EFI partition
+After=local-fs.target
+Before=systemd-modules-load.service network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-stage-firmware
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+UNIT
+ln -sf ../ps5-stage-firmware.service \
+    /out/staging/etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
+
+cat > /out/staging/usr/local/sbin/ps5-bt-quiet <<'HELPER'
+#!/bin/sh
+for i in $(seq 1 15); do
+    [ -n "$(ls /sys/class/bluetooth/hci* 2>/dev/null)" ] && break
+    sleep 1
+done
+for h in /sys/class/bluetooth/hci*; do
+    [ -e "$h/address" ] || continue
+    idx=$(basename "$h" | sed 's/hci//')
+    addr=$(cat "$h/address")
+    if [ "$addr" = "00:00:00:00:00:00" ]; then
+        hciconfig hci$idx down 2>/dev/null || btmgmt -i $idx power off 2>/dev/null || true
+    else
+        bluetoothctl -- select "$addr" >/dev/null 2>&1 || true
+        bluetoothctl -- power on       >/dev/null 2>&1 || true
+    fi
+done
+HELPER
+chmod +x /out/staging/usr/local/sbin/ps5-bt-quiet
+
+cat > /out/staging/etc/systemd/system/ps5-bt-quiet.service <<'UNIT'
+[Unit]
+Description=PS5: silence broken hciN + power the working one
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-bt-quiet
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+ln -sf ../ps5-bt-quiet.service \
+    /out/staging/etc/systemd/system/multi-user.target.wants/ps5-bt-quiet.service
+
 echo "=== Build artifacts staged in /out/staging ==="
