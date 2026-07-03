@@ -79,6 +79,17 @@ cp /etc/resolv.conf "$CHROOT/etc/resolv.conf"
 chroot "$CHROOT" /bin/bash -e <<"BAZIN"
     # Disable rpm-ostree services — we're a flat fs now.
     systemctl mask rpm-ostreed.service rpm-ostree-countme.service rpm-ostree-bootstatus.service 2>/dev/null || true
+
+    # Bazzite ships /usr/bin/dnf as a shell wrapper that refuses `install` /
+    # `remove` unless it detects a container or a dev-mode ostree deployment
+    # (points users at rpm-ostree instead). Neither condition holds on our
+    # flat-fs kexec-booted install, so `dnf install` prints a docs URL and
+    # exits 1. Replace the wrapper with a direct dnf5 symlink — with ostree
+    # gone the guard has no purpose here.
+    if [ -f /usr/bin/dnf ] && head -1 /usr/bin/dnf | grep -q "^#!.*bash"; then
+rm -f /usr/bin/dnf
+ln -s dnf5 /usr/bin/dnf
+    fi
     # Drop the embedded ostree object store + deploy tree. With
     # rpm-ostree masked, the running rootfs is the flat OCI
     # extract — /sysroot/ostree/repo/objects/ is a deduplicated
