@@ -335,7 +335,7 @@ else
                 ps5-kernel-packager-arch
     esac
 
-    case "$FORMAT" in rpm)
+    case "$FORMAT" in rpm|all)
         run_stage "Build rpm packager image" \
             docker build -t ps5-kernel-packager-rpm \
                 -f "$SCRIPT_DIR/docker/kernel-builder-rpm/Dockerfile" "$SCRIPT_DIR"
