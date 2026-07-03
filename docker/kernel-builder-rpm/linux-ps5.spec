@@ -31,6 +31,14 @@ cp -a %{stagedir}/. %{buildroot}/
 /boot/System.map-%{kver}
 /boot/config-%{kver}
 /usr/lib/modules/%{kver}
+%config(noreplace) /etc/modprobe.d/moal.conf
+%config(noreplace) /etc/modules-load.d/moal
+/etc/systemd/system/ps5-stage-firmware.service
+/etc/systemd/system/ps5-bt-quiet.service
+/etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
+/etc/systemd/system/multi-user.target.wants/ps5-bt-quiet.service
+/usr/local/sbin/ps5-stage-firmware
+/usr/local/sbin/ps5-bt-quiet
 
 %post
 echo ">> linux-ps5 post-install: kernel %{kver}"
