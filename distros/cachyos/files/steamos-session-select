@@ -73,6 +73,14 @@ case "$session" in
         fi
         ;;
     desktop|plasma|plasma-wayland|plasmax11)
-        exec sudo systemctl reboot
+        # Soft handoff: terminate the current session; agetty respawns
+        # tty1 and profile.d reads next-session=plasma. Avoids the reboot
+        # tax on return-to-desktop.
+        if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+            loginctl terminate-session "$XDG_SESSION_ID"
+        else
+            pkill -u steam gamescope-session-ps5 || true
+            pkill -u steam gamescope || true
+        fi
         ;;
 esac
