@@ -65,11 +65,16 @@ sudo "$(realpath "$0")" "$session"
 
 case "$session" in
     gamescope)
+        # Plasma's compositor + shell run under systemd --user (session 2),
+        # not the tty1 login session — terminate-session alone leaves them
+        # holding DRM and gamescope can't grab the display. Kill them first,
+        # then close the tty1 session so profile.d exec's gamescope-session-ps5.
+        pkill -u steam plasmashell || true
+        pkill -u steam kwin_wayland || true
+        pkill -u steam kwin_x11 || true
+        pkill -u steam Xwayland || true
         if [[ -n "${XDG_SESSION_ID:-}" ]]; then
             loginctl terminate-session "$XDG_SESSION_ID"
-        else
-            pkill -u steam kwin_wayland || true
-            pkill -u steam kwin_x11 || true
         fi
         ;;
     desktop|plasma|plasma-wayland|plasmax11)
