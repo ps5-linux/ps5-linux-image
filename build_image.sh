@@ -9,7 +9,7 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
-PATCHES_REF="kernel-7.1.2-bf16f7e"
+PATCHES_REF="kernel-7.1.3-e81e281"
 
 MULTI_DISTROS="ubuntu2604 arch cachyos"
 
