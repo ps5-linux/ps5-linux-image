@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential bc bison dwarves flex kmod cpio gawk \
-    libdw-dev libelf-dev libssl-dev \
+    libdw-dev libelf-dev libssl-dev zlib1g-dev \
     python3 rsync dpkg-dev debhelper zstd \
     perl git ca-certificates xz-utils ccache \
     gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu libc6-dev-amd64-cross \
