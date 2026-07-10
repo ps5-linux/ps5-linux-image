@@ -12,6 +12,16 @@ set -e
 
 ROOT_DEV=$(findmnt -no SOURCE /)
 DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
+
+# PS5 M.2 drive appear as /dev/nvme*. Do not modify partition table,
+# because it contains m2_init PS5 offset. Only USB drive (/dev/sd*)
+# are safe for automatic grow root partition.
+if [[ "$(basename "$DISK")" == nvme* ]]; then
+    echo "grow-rootfs: M.2 detected, skipping"
+    systemctl disable grow-rootfs.service
+    exit 0
+fi
+
 PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
 
 # Our images dd at their built size (~14 GB) onto a much larger USB. The GPT
