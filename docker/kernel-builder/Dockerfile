@@ -1,13 +1,15 @@
-FROM ubuntu:24.04
+FROM debian:trixie
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential bc bison dwarves flex kmod cpio gawk \
+RUN dpkg --add-architecture amd64 \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential bc bison dwarves flex kmod cpio gawk pkg-config \
     libdw-dev libelf-dev libssl-dev zlib1g-dev \
+    libdw-dev:amd64 libelf-dev:amd64 zlib1g-dev:amd64 \
     python3 rsync dpkg-dev debhelper zstd \
     perl git ca-certificates xz-utils ccache \
-    gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu libc6-dev-amd64-cross \
+    crossbuild-essential-amd64 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV ARCH=x86_64
