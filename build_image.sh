@@ -157,7 +157,7 @@ else
     echo "  Image size:   ${IMG_SIZE}MB"
 fi
 if [ -f "$PATCHES_DIR/.config" ]; then
-    LINUX_BRANCH="v$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?')"
+    LINUX_BRANCH="v$(sed -nE 's/^# Linux\/[^ ]+ ([0-9]+\.[0-9]+(\.[0-9]+)?) .*/\1/p' "$PATCHES_DIR/.config" | head -1)"
     echo "  Kernel:       $LINUX_BRANCH"
 else
     echo "  Kernel:       (will fetch)"
@@ -221,7 +221,7 @@ run_stage() {
         if (( spin_i % 10 == 0 )); then
             local new
             new=$(tail -n +$((log_start + 1)) "$LOG_FILE" 2>/dev/null \
-                | grep -oP '(?<=^=== ).*(?= ===$)' | tail -1)
+                | sed -nE 's/^=== (.*) ===$/\1/p' | tail -1)
             [ -n "$new" ] && status_msg="$new"
         fi
         printf "\r  %s %-60s" "${SPIN_CHARS:spin_i%${#SPIN_CHARS}:1}" "$status_msg"
@@ -275,7 +275,7 @@ else
                 -v "$(dirname "$dir")":/parent \
                 alpine rm -rf "/parent/$(basename "$dir")"
         done
-        LINUX_BRANCH="v$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?')"
+        LINUX_BRANCH="v$(sed -nE 's/^# Linux\/[^ ]+ ([0-9]+\.[0-9]+(\.[0-9]+)?) .*/\1/p' "$PATCHES_DIR/.config" | head -1)"
 
         run_stage "Clone kernel $LINUX_BRANCH" \
             git clone --branch "$LINUX_BRANCH" --depth 1 "$LINUX_REPO" "$LINUX_TMP_DIR"
