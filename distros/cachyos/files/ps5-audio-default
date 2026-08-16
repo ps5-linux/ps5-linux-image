@@ -1,0 +1,14 @@
+#!/bin/bash
+set -u
+
+for _ in $(seq 1 30); do
+    sink="$(pactl list short sinks 2>/dev/null | awk 'tolower($2) ~ /hdmi/ { print $2; exit }')"
+    if [[ -n "$sink" ]]; then
+        pactl set-default-sink "$sink" >/dev/null 2>&1 || true
+        exit 0
+    fi
+    sleep 1
+done
+
+logger -t ps5-audio-default "HDMI sink was not available; retaining the PipeWire default"
+exit 0

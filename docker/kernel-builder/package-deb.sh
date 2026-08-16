@@ -57,6 +57,7 @@ KVER="$(ls -1t /lib/modules | head -1)"
 echo ">> linux-ps5 postinst: kernel $KVER"
 
 # Rebuild initramfs
+depmod -a "$KVER" || true
 if command -v update-initramfs >/dev/null 2>&1; then
     echo ">> Rebuilding initramfs with update-initramfs for $KVER"
     update-initramfs -c -k "$KVER"

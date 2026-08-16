@@ -1,0 +1,35 @@
+#!/bin/bash
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo -- "$0" "$@"
+fi
+
+if [[ $# -gt 1 ]]; then
+    echo "Usage: $0 [public-key-file]" >&2
+    exit 2
+fi
+
+tmp_key=$(mktemp)
+trap 'rm -f "$tmp_key"' EXIT
+
+if [[ $# -eq 1 ]]; then
+    cat -- "$1" >"$tmp_key"
+else
+    echo "Paste one or more SSH public keys, then press Ctrl-D:" >&2
+    cat >"$tmp_key"
+fi
+
+if ! ssh-keygen -l -f "$tmp_key" >/dev/null 2>&1; then
+    echo "No valid SSH public key was provided." >&2
+    exit 1
+fi
+
+install -d -m 700 -o steam -g steam /home/steam/.ssh
+install -m 600 -o steam -g steam "$tmp_key" /home/steam/.ssh/authorized_keys
+
+if [[ -e /etc/ssh/sshd_config.d/10-ps5-hardening.conf ]]; then
+    systemctl reload sshd
+fi
+
+echo "SSH key installed for steam. Password authentication remains disabled."

@@ -39,11 +39,9 @@ fi
 
 # Userspace bits staged by kernel-builder at /out/staging/{etc,usr/local}:
 # ps5-stage-firmware.service + ps5-bt-quiet.service + their /usr/local/sbin
-# helpers + /etc/modprobe.d/moal.conf + /etc/modules-load.d/moal. Without
-# these, moal loads but request_firmware() returns -2 (firmware still on
-# ESP, never staged) and there's no boot-time BT phantom-hci cleanup. The
-# .deb and .pkg.tar.zst packagers already copy these; this was the missing
-# symmetric step on the rpm side.
+# helpers + /etc/modprobe.d/moal.conf + /etc/modules-load.d/moal. Wi-Fi is
+# deliberately disabled by default; the helper can opt in after firmware is
+# staged. The .deb and .pkg.tar.zst packagers copy the same tree.
 for d in etc usr/local; do
     if [ -d "/out/staging/$d" ]; then
         mkdir -p "$STAGE/$d"

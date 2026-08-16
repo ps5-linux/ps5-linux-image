@@ -3,6 +3,17 @@
 # Runs inside Docker; kernel source is bind-mounted at /src.
 set -e
 
+# The PS5 Salina Ethernet driver shipped by ps5-linux-patches can requeue an
+# empty NAPI poll forever when a sticky interrupt cause is observed. The image
+# builder must fail closed if the bounded-NAPI source fix was not applied.
+MTS_SOURCE="drivers/net/phy/mts/mts_main.c"
+[ -f "$MTS_SOURCE" ] \
+    || { echo "ERROR: expected PS5 mts source is missing: $MTS_SOURCE" >&2; exit 1; }
+grep -q 'if (!napi_complete_done(napi, rx_done))' "$MTS_SOURCE" \
+    || { echo "ERROR: bounded-NAPI mts fix is missing" >&2; exit 1; }
+grep -q 'if (rx_done && napi_schedule_prep(&p->napi))' "$MTS_SOURCE" \
+    || { echo "ERROR: mts empty-poll guard is missing" >&2; exit 1; }
+
 # Clean host-built tool artifacts that may reference wrong include paths
 make -C tools/objtool clean 2>/dev/null || true
 
@@ -66,14 +77,54 @@ mkdir -p "$EXTRA_DIR"
 install -m 0644 "$NXP_MW/mlan.ko" "$EXTRA_DIR/mlan.ko"
 install -m 0644 "$NXP_MW/moal.ko" "$EXTRA_DIR/moal.ko"
 
-# Modprobe + modules-load.d so the driver auto-loads at boot.
+# Keep the out-of-tree Wi-Fi stack installed for explicit recovery, but do not
+# auto-load it. On the PS5 kernel 7.1.7 it can flood malformed scan-TLV
+# warnings and is unnecessary when wired Ethernet is available.
 mkdir -p /out/staging/etc/modprobe.d /out/staging/etc/modules-load.d
-echo moal > /out/staging/etc/modules-load.d/moal
+cat > /out/staging/etc/modules-load.d/moal <<'MODULES'
+# Disabled by default. Use /usr/local/sbin/ps5-wifi-enable explicitly after
+# confirming the NXP firmware and accepting the experimental driver status.
+MODULES
 cat > /out/staging/etc/modprobe.d/moal.conf <<'MPCONF'
 # PS5 IW620 mwifiex (NXP moal/mlan, built out-of-tree by kernel-builder).
 softdep moal pre: cfg80211 mlan
 options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=1 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
 MPCONF
+cat > /out/staging/etc/modprobe.d/ps5-disable-broken-wifi.conf <<'BLACKLIST'
+# Wired Ethernet is the supported default. Remove this file or run
+# ps5-wifi-enable before loading moal/mlan manually.
+blacklist moal
+blacklist mlan
+BLACKLIST
+
+cat > /out/staging/usr/local/sbin/ps5-wifi-enable <<'HELPER'
+#!/bin/sh
+set -eu
+BLACKLIST=/etc/modprobe.d/ps5-disable-broken-wifi.conf
+if [ -f "$BLACKLIST" ]; then
+    mv "$BLACKLIST" "$BLACKLIST.disabled"
+fi
+modprobe cfg80211 || true
+modprobe moal
+rfkill unblock all 2>/dev/null || true
+nmcli radio wifi on 2>/dev/null || true
+HELPER
+chmod +x /out/staging/usr/local/sbin/ps5-wifi-enable
+
+cat > /out/staging/usr/local/sbin/ps5-wifi-disable <<'HELPER'
+#!/bin/sh
+set -eu
+BLACKLIST=/etc/modprobe.d/ps5-disable-broken-wifi.conf
+nmcli radio wifi off 2>/dev/null || true
+modprobe -r moal mlan 2>/dev/null || true
+if [ ! -e "$BLACKLIST" ]; then
+    cat > "$BLACKLIST" <<'BLACKLIST'
+blacklist moal
+blacklist mlan
+BLACKLIST
+fi
+HELPER
+chmod +x /out/staging/usr/local/sbin/ps5-wifi-disable
 
 # Rebuild module index so modprobe moal works without depmod -a post-install.
 depmod -b /out/staging "$KVER"
@@ -100,16 +151,19 @@ DST=$DST_DIR/$FW
         break
     fi
 done
-modprobe -r moal mlan 2>/dev/null || true
-modprobe moal 2>/dev/null || true
+if [ ! -e "$DST" ]; then
+    echo "PS5 IW620 firmware not found; Wi-Fi remains disabled"
+fi
 HELPER
 chmod +x /out/staging/usr/local/sbin/ps5-stage-firmware
 
 cat > /out/staging/etc/systemd/system/ps5-stage-firmware.service <<'UNIT'
 [Unit]
 Description=Stage PS5 NXP IW620 wifi firmware from EFI partition
+RequiresMountsFor=/boot/efi
 After=local-fs.target
-Before=systemd-modules-load.service network-pre.target
+Before=NetworkManager.service
+ConditionPathExists=/boot/efi/lib/nxp/pcieuartiw620_combo_v1.bin
 
 [Service]
 Type=oneshot
@@ -117,10 +171,10 @@ ExecStart=/usr/local/sbin/ps5-stage-firmware
 RemainAfterExit=yes
 
 [Install]
-WantedBy=sysinit.target
+WantedBy=multi-user.target
 UNIT
 ln -sf ../ps5-stage-firmware.service \
-    /out/staging/etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
+    /out/staging/etc/systemd/system/multi-user.target.wants/ps5-stage-firmware.service
 
 cat > /out/staging/usr/local/sbin/ps5-bt-quiet <<'HELPER'
 #!/bin/sh

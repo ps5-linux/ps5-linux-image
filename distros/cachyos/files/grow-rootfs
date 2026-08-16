@@ -1,14 +1,104 @@
 #!/bin/bash
-# Grows the root partition and filesystem to fill the disk.
+# Grow the PS5 root partition and filesystem to fill a larger USB disk.
 # Runs once on first boot, then disables itself.
-set -e
+set -euo pipefail
 
 ROOT_DEV=$(findmnt -no SOURCE /)
 DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
-PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
 
-growpart "$DISK" "$PART_NUM" || true
-partprobe "$DISK"
-resize2fs "$ROOT_DEV" || true
+# PS5 M.2 devices contain Sony metadata at fixed offsets. Only a conventional
+# USB disk is safe for automatic partition-table growth; refuse unknown block
+# naming schemes instead of guessing.
+case "$(basename "$DISK")" in
+    sd[a-z]*) ;;
+    nvme*) echo "grow-rootfs: M.2 detected, skipping"; systemctl disable grow-rootfs.service; exit 0 ;;
+    *) echo "grow-rootfs: unsupported root disk $DISK, skipping"; systemctl disable grow-rootfs.service; exit 0 ;;
+esac
 
+PART_NUM=$(cat "/sys/class/block/$(basename "$ROOT_DEV")/partition")
+
+# Keep a recoverable record of the table before changing either GPT header.
+# This is still not a substitute for the owner's off-disk backup, but it
+# prevents a failed first-boot resize from destroying the only local geometry
+# record. Never overwrite an earlier record from the same image.
+BACKUP_DIR=/var/lib/ps5-linux/gpt-backup
+mkdir -p "$BACKUP_DIR"
+GPT_BACKUP="$BACKUP_DIR/before-grow.sgdisk"
+SFDISK_DUMP="$BACKUP_DIR/before-grow.sfdisk"
+if [[ ! -e "$GPT_BACKUP" || ! -e "$SFDISK_DUMP" ]]; then
+    sgdisk --backup="$GPT_BACKUP" "$DISK"
+    sfdisk --dump "$DISK" > "$SFDISK_DUMP"
+    sync
+fi
+
+# A raw image written to a larger disk leaves the backup GPT at the image's
+# old end. Repair it before extending the root partition, otherwise the table
+# remains stale even if resize2fs succeeds.
+sgdisk -e "$DISK"
+
+# Remove stale partitions beyond the two PS5 image partitions. Rewrite both
+# the on-disk table and the kernel's in-memory view before extending root.
+while read -r number; do
+    [[ -n "$number" ]] || continue
+    sgdisk -d "$number" "$DISK"
+    partx -d --nr "$number" "$DISK" 2>/dev/null || true
+done < <(parted -ms "$DISK" print 2>/dev/null | awk -F: 'NR > 2 && $1+0 > 2 { print $1 }')
+
+echo ",+" | sfdisk --no-reread -N "$PART_NUM" "$DISK"
+
+# Ask the running kernel to resize the mounted partition. partx is retained as
+# a fallback for kernels that reject the direct BLKPG ioctl.
+python3 - "$DISK" "$PART_NUM" <<'PY'
+import ctypes
+import fcntl
+import os
+import subprocess
+import sys
+
+disk, pno = sys.argv[1], int(sys.argv[2])
+listing = subprocess.run(
+    ["sfdisk", "--bytes", "-q", "-l", disk],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout
+
+start = sectors = None
+for line in listing.splitlines():
+    if line.startswith(f"{disk}{pno} ") or line.startswith(f"{disk}p{pno} "):
+        fields = line.split()
+        start, sectors = int(fields[1]), int(fields[3])
+        break
+
+if start is None:
+    raise SystemExit(f"could not parse partition {pno} from sfdisk -l {disk}")
+
+class Partition(ctypes.Structure):
+    _fields_ = [
+        ("start", ctypes.c_longlong),
+        ("length", ctypes.c_longlong),
+        ("pno", ctypes.c_int),
+        ("devname", ctypes.c_char * 64),
+        ("volname", ctypes.c_char * 64),
+    ]
+
+class Argument(ctypes.Structure):
+    _fields_ = [
+        ("op", ctypes.c_int),
+        ("flags", ctypes.c_int),
+        ("datalen", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+    ]
+
+partition = Partition(start=start * 512, length=sectors * 512, pno=pno)
+argument = Argument(op=3, flags=0, datalen=ctypes.sizeof(partition), data=ctypes.addressof(partition))
+fd = os.open(disk, os.O_RDONLY)
+try:
+    fcntl.ioctl(fd, 0x1269, argument)  # BLKPG, BLKPG_RESIZE_PARTITION
+finally:
+    os.close(fd)
+PY
+
+partx -u --nr "$PART_NUM" "$DISK" 2>/dev/null || true
+resize2fs "$ROOT_DEV"
 systemctl disable grow-rootfs.service

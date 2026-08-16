@@ -1,0 +1,11 @@
+[Unit]
+Description=Prefer PS5 HDMI audio over DualSense audio
+After=pipewire.service pipewire-pulse.service wireplumber.service
+Wants=pipewire-pulse.service wireplumber.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ps5-audio-default
+
+[Install]
+WantedBy=default.target

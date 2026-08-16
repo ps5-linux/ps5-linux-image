@@ -13,16 +13,29 @@ set -e
 ROOT_DEV=$(findmnt -no SOURCE /)
 DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
 
-# PS5 M.2 drive appear as /dev/nvme*. Do not modify partition table,
-# because it contains m2_init PS5 offset. Only USB drive (/dev/sd*)
-# are safe for automatic grow root partition.
-if [[ "$(basename "$DISK")" == nvme* ]]; then
-    echo "grow-rootfs: M.2 detected, skipping"
-    systemctl disable grow-rootfs.service
-    exit 0
-fi
+# PS5 M.2 drives appear as /dev/nvme*. Do not modify the partition table,
+# because it contains m2_init PS5 offsets. Only a conventional USB disk is
+# safe for automatic growth; refuse unknown block naming schemes.
+case "$(basename "$DISK")" in
+    sd[a-z]*) ;;
+    nvme*) echo "grow-rootfs: M.2 detected, skipping"; systemctl disable grow-rootfs.service; exit 0 ;;
+    *) echo "grow-rootfs: unsupported root disk $DISK, skipping"; systemctl disable grow-rootfs.service; exit 0 ;;
+esac
 
 PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
+
+# Preserve the table geometry before changing the GPT. This local record is
+# not a replacement for an off-disk backup, but it makes a failed first-boot
+# resize recoverable without guessing the original boundaries.
+BACKUP_DIR=/var/lib/ps5-linux/gpt-backup
+mkdir -p "$BACKUP_DIR"
+GPT_BACKUP="$BACKUP_DIR/before-grow.sgdisk"
+SFDISK_DUMP="$BACKUP_DIR/before-grow.sfdisk"
+if [[ ! -e "$GPT_BACKUP" || ! -e "$SFDISK_DUMP" ]]; then
+    sgdisk --backup="$GPT_BACKUP" "$DISK"
+    sfdisk --dump "$DISK" > "$SFDISK_DUMP"
+    sync
+fi
 
 # Our images dd at their built size (~14 GB) onto a much larger USB. The GPT
 # backup header is therefore at byte ~built-size, not at end of disk. Move

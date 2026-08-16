@@ -10,6 +10,9 @@
 #   --backend drm            : take the DRM device directly (no nested compositor)
 #   -e                       : embedded / Steam Big Picture mode
 #   --prefer-output DP-1     : target the PS5's internal DP connector
+#   -W/-H and -w/-h          : cap both display and game rendering at 1080p;
+#                              native 4K exhausted unified CPU/GPU memory
+#   -r 60                    : stable baseline for the DP-to-HDMI bridge
 #   --sdr-gamut-wideness 0   : keep SDR colour space at sRGB; the PS5's internal
 #                              DP->HDMI bridge cannot translate BT2020 signalling
 #
@@ -26,10 +29,21 @@ export WLR_LIBINPUT_NO_DEVICES=1
 #                   "Updater apply error: 2: null" and the OOBE blocks on the
 #                   "Software updates" step. (Field-reported by users.) Use
 #                   `sudo pacman -Syu` for OS updates.
-exec /usr/bin/gamescope \
+# Keep compositor and Steam diagnostics in the bounded system journal instead
+# of painting them over tty1.
+exec /usr/bin/systemd-cat \
+    --identifier=gamescope-ps5 \
+    --priority=info \
+    --stderr-priority=warning \
+    /usr/bin/gamescope \
     --backend drm \
     -e \
     --prefer-output DP-1 \
+    -W 1920 \
+    -H 1080 \
+    -w 1920 \
+    -h 1080 \
+    -r 60 \
     --sdr-gamut-wideness 0 \
     -- \
-    /usr/bin/steam -gamepadui
+    /usr/local/bin/ps5-steam-session

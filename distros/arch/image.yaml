@@ -69,7 +69,9 @@ packages:
     - mkinitcpio
     - kmod
     - e2fsprogs
+    - gptfdisk
     - parted
+    - python
     - polkit
     - dbus
     - seatd
@@ -166,9 +168,9 @@ actions:
   action: |-
     #!/bin/bash
     set -eux
-    mkdir -p /etc/systemd/system/local-fs.target.wants
+    mkdir -p /etc/systemd/system/multi-user.target.wants
     ln -sf /etc/systemd/system/grow-rootfs.service \
-      /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
+      /etc/systemd/system/multi-user.target.wants/grow-rootfs.service
 
     systemctl enable bluetooth.service
 

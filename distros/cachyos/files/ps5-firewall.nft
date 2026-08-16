@@ -1,0 +1,32 @@
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table inet ps5_filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        iifname "lo" accept
+        ct state established,related accept
+
+        # DHCP client traffic is not always represented as an established
+        # conntrack flow because the reply is broadcast.
+        udp sport 67 udp dport 68 accept
+        udp sport 547 udp dport 546 accept
+
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+
+        # SSH is available only from private/LAN address space, and sshd is
+        # key-only by default.
+        ip saddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } tcp dport 22 accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}

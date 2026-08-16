@@ -32,13 +32,16 @@ cp -a %{stagedir}/. %{buildroot}/
 /boot/config-%{kver}
 /usr/lib/modules/%{kver}
 %config(noreplace) /etc/modprobe.d/moal.conf
-%config(noreplace) /etc/modules-load.d/moal
+%config(noreplace) /etc/modprobe.d/ps5-disable-broken-wifi.conf
+/etc/modules-load.d/moal
 /etc/systemd/system/ps5-stage-firmware.service
 /etc/systemd/system/ps5-bt-quiet.service
-/etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
+/etc/systemd/system/multi-user.target.wants/ps5-stage-firmware.service
 /etc/systemd/system/multi-user.target.wants/ps5-bt-quiet.service
 /usr/local/sbin/ps5-stage-firmware
 /usr/local/sbin/ps5-bt-quiet
+/usr/local/sbin/ps5-wifi-enable
+/usr/local/sbin/ps5-wifi-disable
 
 %post
 echo ">> linux-ps5 post-install: kernel %{kver}"

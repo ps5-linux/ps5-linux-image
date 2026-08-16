@@ -23,7 +23,7 @@ usage() {
     echo "  --clean      Remove all cached build artifacts and start from scratch"
     echo "  --clean-only Remove all cached build artifacts and exit"
     echo "  --kernel-only  Build and package the kernel only, then exit"
-    echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: v1.2)"
+    echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: kernel-7.1.7-56922cf)"
     exit 1
 }
 
@@ -46,6 +46,7 @@ LINUX_DEFAULT_DIR="$SCRIPT_DIR/work/linux"
 
 PATCHES_REPO="https://github.com/ps5-linux/ps5-linux-patches.git"
 PATCHES_DIR="$SCRIPT_DIR/work/ps5-linux-patches"
+LOCAL_KERNEL_PATCHES_DIR="$SCRIPT_DIR/kernel-patches"
 
 if [ -z "$KERNEL_SRC" ]; then
     KERNEL_SRC="$LINUX_DEFAULT_DIR"
@@ -59,6 +60,34 @@ CCACHE_DIR="${CCACHE_DIR:-$SCRIPT_DIR/ccache}"
 LOG_FILE="$SCRIPT_DIR/build.log"
 DOCKER_NAME="ps5-build-$$"
 
+hash_files() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$@" | sha256sum | awk '{print $1}'
+    else
+        shasum -a 256 "$@" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+shopt -s nullglob
+LOCAL_KERNEL_PATCH_FILES=("$LOCAL_KERNEL_PATCHES_DIR"/*.patch)
+shopt -u nullglob
+[ "${#LOCAL_KERNEL_PATCH_FILES[@]}" -gt 0 ] || {
+    echo "ERROR: no local kernel patches found in $LOCAL_KERNEL_PATCHES_DIR" >&2
+    exit 1
+}
+LOCAL_KERNEL_PATCH_HASH="$(hash_files "${LOCAL_KERNEL_PATCH_FILES[@]}")"
+LOCAL_KERNEL_PATCH_STAMP="$KERNEL_OUT/.kernel-cache-key"
+
+kernel_cache_key() {
+    local config_hash=missing
+    if [ -f "$PATCHES_DIR/.config" ]; then
+        config_hash="$(hash_files "$PATCHES_DIR/.config")"
+    fi
+    printf 'patches-ref=%s\npatches-config=%s\nlocal-kernel-patches=%s\n' \
+        "$PATCHES_REF" "$config_hash" "$LOCAL_KERNEL_PATCH_HASH"
+}
+
+KERNEL_CACHE_KEY="$(kernel_cache_key)"
 
 
 if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
@@ -134,6 +163,11 @@ case "$FORMAT" in
           ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
     *)    ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
 esac
+
+if [ "$SKIP_KERNEL" = true ]; then
+    [ -f "$LOCAL_KERNEL_PATCH_STAMP" ] || SKIP_KERNEL=false
+    [ "$(cat "$LOCAL_KERNEL_PATCH_STAMP" 2>/dev/null || true)" = "$KERNEL_CACHE_KEY" ] || SKIP_KERNEL=false
+fi
 
 if [ "$DISTRO" = "all" ]; then
     SKIP_CHROOT=true
@@ -245,6 +279,24 @@ run_stage() {
     fi
 }
 
+apply_local_kernel_patches() {
+    local source_dir="$1"
+    local patch
+
+    for patch in "${LOCAL_KERNEL_PATCH_FILES[@]}"; do
+        if git -C "$source_dir" apply --check "$patch" >/dev/null 2>&1; then
+            echo "Applying local kernel fix: $(basename "$patch")"
+            git -C "$source_dir" apply "$patch"
+        elif git -C "$source_dir" apply --reverse --check "$patch" >/dev/null 2>&1; then
+            echo "Local kernel fix already present: $(basename "$patch")"
+        else
+            echo "ERROR: local kernel patch does not apply cleanly: $patch" >&2
+            echo "Refresh the patch against the selected ps5-linux-patches ref." >&2
+            return 1
+        fi
+    done
+}
+
 # --- Setup directories ---
 mkdir -p "$KERNEL_OUT" "$OUTPUT_DIR" "$CHROOT_DIR" "$CACHE_DIR" "$CCACHE_DIR"
 if [ "$DISTRO" = "all" ]; then
@@ -300,6 +352,9 @@ else
 
     KERNEL_SRC="$(cd "$KERNEL_SRC" && pwd)"
 
+    run_stage "Apply local PS5 kernel fixes" \
+        apply_local_kernel_patches "$KERNEL_SRC"
+
     rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst "$KERNEL_OUT"/*.rpm
 
     run_stage "Build kernel builder image" \
@@ -344,6 +399,8 @@ else
                 -v "$KERNEL_OUT":/out \
                 ps5-kernel-packager-rpm
     esac
+
+    kernel_cache_key > "$LOCAL_KERNEL_PATCH_STAMP"
 fi
 
 if [ "$KERNEL_ONLY" = true ]; then

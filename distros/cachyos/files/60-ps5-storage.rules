@@ -1,0 +1,4 @@
+# The PS5 root filesystem is commonly on a USB mechanical disk. BFQ protects
+# latency under mixed Steam/game I/O; 2 MiB read-ahead avoids the cache
+# amplification observed with the default 64 MiB setting.
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq", ATTR{queue/read_ahead_kb}="2048"

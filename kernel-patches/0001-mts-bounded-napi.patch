@@ -1,0 +1,37 @@
+diff --git a/drivers/net/phy/mts/mts_main.c b/drivers/net/phy/mts/mts_main.c
+--- a/drivers/net/phy/mts/mts_main.c
++++ b/drivers/net/phy/mts/mts_main.c
+@@ -547,17 +547,30 @@ static int gbe_poll(struct napi_struct *napi, int budget)
+ 	if (rx_done < budget) {
+ 		u32 isr;
+ 
+-		napi_complete_done(napi, rx_done);
++		/*
++		 * napi_complete_done() returning false means the NAPI core does not
++		 * want the device interrupts rearmed (for example while NAPI is being
++		 * disabled).  Respect that contract before touching IER or attempting
++		 * to schedule this NAPI instance again.
++		 */
++		if (!napi_complete_done(napi, rx_done))
++			return rx_done;
++
+ 		gbe_wr(p, GBE_REG_IER, GBE_IER_MASK);
+ 		/* chip wont send a fresh msi for stuff that landed while ier was
+ 		   off, so re-check isr and re-kick or interrupts just freeze.
+ 		   ACK the causes (W1C) first: otherwise a latched/undelivered
+ 		   cause (the msi-silent cold-boot case) keeps this condition
+-		   permanently true and spins napi at ~30k polls/s, pinning a cpu. */
++		   permanently true and spins napi at ~30k polls/s, pinning a cpu.
++
++		   A cause can also be level-triggered, sticky, or immediately
++		   reassert after the ACK.  Never use that status alone to requeue an
++		   empty poll: the link watchdog remains the bounded fallback for a
++		   lost MSI. */
+ 		isr = gbe_rd(p, GBE_REG_ISR) & GBE_IER_MASK;
+ 		if (isr) {
+ 			gbe_wr(p, GBE_REG_ISR, isr);
+-			if (napi_schedule_prep(&p->napi)) {
++			if (rx_done && napi_schedule_prep(&p->napi)) {
+ 				gbe_wr(p, GBE_REG_IER, 0);
+ 				__napi_schedule(&p->napi);
+ 			}

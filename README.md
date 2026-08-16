@@ -20,19 +20,11 @@ newgrp docker
 # Build a single Ubuntu 26.04 image
 ./build_image.sh --distro ubuntu2604
 
-OR
-
 # Build CachyOS (Arch-based, Gamescope + Steam Big Picture)
 ./build_image.sh --distro cachyos
 
-OR
-
-OR
-
 # Build Fedora (GNOME desktop)
 ./build_image.sh --distro fedora
-
-OR
 
 # Build a multi-distro image (ubuntu2604 + arch + cachyos)
 ./build_image.sh --distro all
@@ -55,7 +47,7 @@ sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
 | `--kernel-only` | Build and package the kernel only, then exit | off |
-| `--patches-ref` | Branch, tag, or commit SHA for patches | `v1.2` |
+| `--patches-ref` | Branch, tag, or commit SHA for patches | `kernel-7.1.7-56922cf` |
 
 ## Caching
 
@@ -66,6 +58,35 @@ The build automatically skips stages that have already completed:
 - **Root filesystem** — reused if chroot directories are populated
 
 Use `--clean` to wipe everything and rebuild from scratch. The build will also suggest `--clean` if a stage fails.
+
+## CachyOS PS5 defaults
+
+The CachyOS image is tuned for the PS5 hardware and the external mechanical
+disk used by the reference system:
+
+- Gamescope starts at 1920×1080/60 with journald capture, which leaves more
+  unified memory for games than native 4K output.
+- A 4 GiB lz4 zram device, bounded dirty writeback, and low console printk
+  verbosity reduce OOM kills and boot-time log floods.
+- Rotational USB disks use BFQ and 2 MiB read-ahead. The first-boot grower
+  saves an `sgdisk`/`sfdisk` table record, repairs the backup GPT, and then
+  expands the root partition.
+- NetworkManager is the only enabled network manager. The experimental NXP
+  Wi-Fi driver is installed but disabled by default; wired Ethernet is the
+  supported baseline. Use `/usr/local/sbin/ps5-wifi-enable` only when Wi-Fi is
+  needed, and disable it again if the malformed scan-TLV log storm returns.
+- The Salina Ethernet NAPI fix in `kernel-patches/` is applied and checked
+  during every uncached kernel build.
+
+The image does not ship the reusable `steam:steam` password. On first boot,
+the local wizard requires the owner to choose a password. SSH password login
+is disabled; after boot, install a public key with
+`/usr/local/sbin/ps5-ssh-setup`. The firewall permits only established traffic,
+DHCP/ICMP, and SSH from private LAN addresses.
+
+Hardware limits remain hardware limits: fan telemetry and PS5 microcode are
+not exposed by the upstream kernel, and display/HDR/VRR behavior still depends
+on the PS5 DP-to-HDMI bridge and the connected display.
 
 ## Build Output
 
@@ -90,6 +111,12 @@ Logs: /path/to/build.log
 ```
 
 All verbose output goes to `build.log`. The terminal shows a spinner with live progress.
+
+Before building, run the local static checks:
+
+```bash
+./tests/validate-ps5-image.sh
+```
 
 ## Distributions
 

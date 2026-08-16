@@ -1,6 +1,7 @@
 #!/bin/bash
 # First-boot: dialog wizard on tty1 (timezone, steam password, hostname).
-# Defaults: UTC, ps5, keep image password (steam:steam). Skips on Cancel use defaults.
+# The image ships with a locked steam password; a non-empty owner password is
+# required before the first boot is marked complete.
 set -euo pipefail
 
 ORIG_PRINTK="$(cat /proc/sys/kernel/printk 2>/dev/null || true)"
@@ -31,6 +32,35 @@ apply_hostname() {
     fi
 }
 
+require_password() {
+    local p1 p2
+    dialog --clear --msgbox \
+        "Set a non-empty password for user steam.\n\nThe image does not retain the default steam:steam password." \
+        10 62
+    while true; do
+        if ! p1="$(dialog --stdout --clear --passwordbox "New password" 9 55)"; then
+            dialog --clear --msgbox "A password is required before setup can finish." 7 58
+            continue
+        fi
+        if [[ -z "$p1" ]]; then
+            dialog --clear --msgbox "A non-empty password is required." 7 50
+            continue
+        fi
+        if ! p2="$(dialog --stdout --clear --passwordbox "Confirm password" 9 55)"; then
+            dialog --clear --msgbox "A password is required before setup can finish." 7 58
+            continue
+        fi
+        if [[ "$p1" != "$p2" ]]; then
+            dialog --clear --msgbox "Passwords do not match. Try again." 7 50
+            continue
+        fi
+        printf 'steam:%s\n' "$p1" | chpasswd
+        passwd -u steam >/dev/null 2>&1 || true
+        rm -f /etc/ps5-password-setup-required
+        return 0
+    done
+}
+
 main() {
     if ! command -v dialog >/dev/null 2>&1; then
         echo "first-boot-setup: dialog not installed" >&2
@@ -43,7 +73,7 @@ main() {
     choice="$(dialog --stdout --clear --menu \
         "Welcome to CachyOS on PS5\nUser: steam (Gaming Mode + Desktop)" \
         17 64 4 \
-        defaults "Use defaults (UTC, hostname ps5, keep password)" \
+        defaults "Use defaults (UTC, hostname ps5)" \
         custom "Customize timezone, password, hostname" )" \
         || choice="defaults"
 
@@ -69,26 +99,6 @@ main() {
             apply_timezone UTC
         fi
 
-        if dialog --clear --yesno "Change password for user steam?" 8 55; then
-            local p1 p2
-            while true; do
-                p1="$(dialog --stdout --clear --insecure --passwordbox "New password (empty = skip)" 9 55)" \
-                    || break
-                p2="$(dialog --stdout --clear --insecure --passwordbox "Confirm password" 9 55)" \
-                    || break
-                if [[ -z "$p1" ]]; then
-                    dialog --clear --msgbox "Password unchanged (empty)." 7 44
-                    break
-                fi
-                if [[ "$p1" != "$p2" ]]; then
-                    dialog --clear --msgbox "Passwords do not match. Try again." 7 50
-                    continue
-                fi
-                echo "steam:$p1" | chpasswd
-                break
-            done
-        fi
-
         local hn
         hn="$(dialog --stdout --clear --inputbox "Hostname (empty = ps5)" 9 50 "ps5")" \
             || hn="ps5"
@@ -96,10 +106,12 @@ main() {
         apply_hostname "$hn"
     fi
 
+    require_password
+
     touch /etc/ps5-first-boot-done
 
     dialog --clear --msgbox \
-        "Setup complete.\n\nYou will log in on tty1 (Steam Gaming Mode).\n\nDesktop: Steam > Power > Switch to KDE\nReturn: double-click the desktop shortcut." \
+        "Setup complete.\n\nYou will log in on tty1 (Steam Gaming Mode).\n\nDesktop: Steam > Power > Switch to KDE\nReturn: double-click the desktop shortcut.\n\nSSH: install a key with /usr/local/sbin/ps5-ssh-setup." \
         14 62
 }
 

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Gamescope creates its Xwayland display only after the user manager starts.
+# Export the resulting display variables so D-Bus-activated desktop services
+# can connect instead of crash-looping during the Steam session.
+dbus-update-activation-environment --systemd \
+    DISPLAY WAYLAND_DISPLAY GAMESCOPE_WAYLAND_DISPLAY \
+    XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+systemctl --user reset-failed xdg-desktop-portal-gtk.service
+
+exec /usr/bin/steam -gamepadui

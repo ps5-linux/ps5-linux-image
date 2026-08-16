@@ -51,6 +51,7 @@ packages:
     - pipewire
     - wireplumber
     - pipewire-pulse
+    - rtkit
 
     # Display / GPU (AMD) — qualify extra/ so pacman does not prompt vs [cachyos] mesa
     - extra/mesa
@@ -79,12 +80,17 @@ packages:
     - kmod
     - e2fsprogs
     - cloud-utils
+    - gptfdisk
     - parted
+    - python
     - polkit
     - dbus
     - kexec-tools
     - curl
     - dialog
+    - nftables
+    - smartmontools
+    - systemd-zram-generator
 
     # Fonts (Steam UI + KDE) — CJK + emoji avoid "tofu" boxes in Steam Big Picture language list
     - ttf-dejavu
@@ -119,6 +125,48 @@ files:
 - path: /etc/systemd/system/grow-rootfs.service
   generator: copy
   source: /tmp/build-staging/files/grow-rootfs.service
+
+- path: /etc/systemd/zram-generator.conf
+  generator: copy
+  source: /tmp/build-staging/files/zram-generator.conf
+
+- path: /etc/sysctl.d/90-ps5-gaming.conf
+  generator: copy
+  source: /tmp/build-staging/files/90-ps5-gaming.conf
+
+- path: /etc/modules-load.d/ps5-storage.conf
+  generator: copy
+  source: /tmp/build-staging/files/ps5-storage.conf
+
+- path: /etc/udev/rules.d/60-ps5-storage.rules
+  generator: copy
+  source: /tmp/build-staging/files/60-ps5-storage.rules
+
+- path: /etc/NetworkManager/conf.d/20-ps5-networkmanager.conf
+  generator: copy
+  source: /tmp/build-staging/files/20-ps5-networkmanager.conf
+
+- path: /etc/ssh/sshd_config.d/10-ps5-hardening.conf
+  generator: copy
+  source: /tmp/build-staging/files/10-ps5-hardening.conf
+
+- path: /etc/nftables.conf
+  generator: copy
+  source: /tmp/build-staging/files/ps5-firewall.nft
+
+- path: /usr/local/sbin/ps5-ssh-setup
+  generator: copy
+  source: /tmp/build-staging/files/ps5-ssh-setup
+  mode: "0755"
+
+- path: /usr/local/bin/ps5-audio-default
+  generator: copy
+  source: /tmp/build-staging/files/ps5-audio-default
+  mode: "0755"
+
+- path: /usr/lib/systemd/user/ps5-audio-default.service
+  generator: copy
+  source: /tmp/build-staging/files/ps5-audio-default.service
 
 - path: /opt/pkgs/
   generator: copy
@@ -159,6 +207,11 @@ files:
 - path: /usr/local/share/plasma-workspace-env-ps5.sh
   generator: copy
   source: /tmp/build-staging/files/plasma-workspace-env-ps5.sh
+  mode: "0755"
+
+- path: /usr/local/bin/ps5-steam-session
+  generator: copy
+  source: /tmp/build-staging/files/ps5-steam-session
   mode: "0755"
 
 actions:
@@ -217,10 +270,21 @@ actions:
       ln -sf "$src" "/etc/systemd/system/${target}.wants/${base}"
     }
 
-    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
-    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'                /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/'  /etc/ssh/sshd_config
+    sed -i 's/^#*KbdInteractiveAuthentication.*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config
     symlink_wants /usr/lib/systemd/system/sshd.service multi-user.target
     symlink_wants /usr/lib/systemd/system/NetworkManager.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/systemd-resolved.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/nftables.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/rtkit-daemon.service multi-user.target
+    # NetworkManager is the only network manager in this image. Mask the
+    # competing networkd units so a base-image default cannot add a 120-second
+    # wait-online delay or produce a degraded boot.
+    for unit in systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service; do
+      ln -sf /dev/null "/etc/systemd/system/$unit"
+    done
+    ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
     # PipeWire/WirePlumber: user session after tty autologin; default.target matches Arch Sway image.
     for s in pipewire pipewire-pulse wireplumber; do
       symlink_wants "/usr/lib/systemd/system/${s}.service" default.target || true
@@ -230,11 +294,22 @@ actions:
   action: |-
     #!/bin/bash
     set -eux
-    mkdir -p /etc/systemd/system/local-fs.target.wants
+    mkdir -p /etc/systemd/system/multi-user.target.wants
     ln -sf /etc/systemd/system/grow-rootfs.service \
-      /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
+      /etc/systemd/system/multi-user.target.wants/grow-rootfs.service
 
     systemctl enable bluetooth.service
+    systemctl enable nftables.service
+    systemctl enable rtkit-daemon.service 2>/dev/null || true
+
+    # Steam and KDE expect a generated UTF-8 locale; without it the first
+    # session emits locale warnings and some language/font lists are empty.
+    if [ -f /etc/locale.gen ]; then
+      sed -i 's/^#[[:space:]]*en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+      grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen || echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+      locale-gen
+    fi
+    printf '%s\n' 'LANG=en_US.UTF-8' > /etc/locale.conf
 
     # Stub out steamos-update so Steam's -steamos3 OOBE skips the SteamOS OTA
     # step cleanly. Exit 7 = "no update available" per Valve's convention.
@@ -243,8 +318,15 @@ actions:
     chmod +x /usr/bin/steamos-update
 
     useradd -m -G wheel,seat,video,audio,input -s /bin/bash steam
-    echo "steam:steam" | chpasswd
-    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+    # Do not ship a reusable password. The first-boot wizard unlocks the
+    # account only after the owner chooses a non-empty password.
+    passwd -l steam
+    touch /etc/ps5-password-setup-required
+    cat > /etc/sudoers.d/wheel <<'SUDOERS'
+    %wheel ALL=(ALL:ALL) ALL
+    steam ALL=(root) NOPASSWD: /usr/bin/steamos-session-select *, /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff
+    SUDOERS
+    chmod 0440 /etc/sudoers.d/wheel
 
     # --- No SDDM: tty1 autologin + /etc/profile.d/ps5-tty-session.sh (+ ~/.bashrc source) ---
     # SDDM is only a display manager (login UI, VT handoff, relaunch). plasma-meta may
@@ -300,6 +382,8 @@ actions:
       [ -e "$u" ] || continue
       ln -sf "$u" "/home/steam/.config/systemd/user/default.target.wants/$(basename "$u")"
     done
+    ln -sf /usr/lib/systemd/user/ps5-audio-default.service \
+      /home/steam/.config/systemd/user/default.target.wants/ps5-audio-default.service
     chown -R steam:steam /home/steam/.config/systemd
 
     # Gamescope display profile: force sRGB colorimetry so gamescope does not set
