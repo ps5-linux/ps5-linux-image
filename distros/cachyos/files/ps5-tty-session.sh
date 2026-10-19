@@ -68,6 +68,18 @@ case "$SESSION" in
   gamescope|*)
     echo gamescope >"$SESSION_FILE"
     export WLR_LIBINPUT_NO_DEVICES=1
+
+    # Wait for a real network connection before launching Steam. Steam's
+    # gamepadui does not recover well from starting offline — it sits in a
+    # "LogonFailure No Connection" retry loop and never draws a frame,
+    # leaving the console text on screen looking like gamescope crashed.
+    # nm-online returns after 30s even without a link so an offline console
+    # still boots into the session (Steam shows its offline UI then).
+    if command -v nm-online >/dev/null 2>&1; then
+      printf '    Waiting for network...\n'
+      nm-online -q -t 30 || true
+    fi
+
     exec /usr/bin/gamescope-session-ps5
     ;;
 esac
