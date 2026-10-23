@@ -54,6 +54,7 @@ git clone --depth 1 --branch "$MWIFIEX_NXP_REF" "$MWIFIEX_NXP_REPO" "$NXP_MW"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-cmd-timeout-recover.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-kernel71-compat.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-kernel72-compat.patch"
 
 # Build against the kernel source we just built (out-of-tree build needs
 # the in-tree build dir, not just headers; same as install-extmod-build).

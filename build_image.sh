@@ -311,6 +311,7 @@ else
             -v "$KERNEL_SRC":/src \
             -v "$KERNEL_OUT":/out \
             -v "$CCACHE_DIR":/ccache \
+            -v "$PATCHES_DIR":/ps5-linux-patches \
             ps5-kernel-builder
 
     ls "$KERNEL_OUT/staging/lib/modules/" | head -1 > "$KERNEL_OUT/VERSION"
