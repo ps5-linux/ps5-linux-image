@@ -1,0 +1,211 @@
+image:
+  name: ps5-omarchy
+  distribution: archlinux
+  release: rolling
+  description: Omarchy (Arch + Hyprland) desktop for PS5
+  architecture: x86_64
+source:
+  downloader: archlinux-http
+  url: https://geo.mirror.pkgbuild.com/iso
+  skip_verification: true
+packages:
+  manager: pacman
+  update: true
+  cleanup: true
+  repositories:
+  - name: mirrorlist
+    url: |-
+      Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+      Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch
+  sets:
+  - packages:
+    # The Omarchy package itself lives in Omarchy's repo (installed from the
+    # staged copies in post-files; the container has no DNS inside the chroot)
+    # and pulls Hyprland, Quickshell, uwsm, sddm and the rest of its depends.
+    # This set is the Arch half: what the PS5 image needs, plus the repo
+    # packages omarchy-settings depends on.
+    - base
+    - base-devel
+    # Omarchy dependencies not already pulled in by omarchy itself
+    - gum
+    - perl
+    - sddm
+    # Display / GPU (AMD Oberon)
+    - mesa
+    - vulkan-radeon
+    - libva-mesa-driver
+    - xf86-video-amdgpu
+    - libinput
+    - xkeyboard-config
+    # Session / plumbing
+    - dbus
+    - egl-wayland
+    - gst-plugin-pipewire
+    - gtk4-layer-shell
+    - pipewire
+    - pipewire-alsa
+    - pipewire-jack
+    - pipewire-pulse
+    - polkit
+    - qt6-base
+    - qt6-declarative
+    - qt6-imageformats
+    - qt6-multimedia
+    - qt6-svg
+    - qt6-wayland
+    - seatd
+    - wireplumber
+    - wl-clipboard
+    - wtype
+    - xdg-desktop-portal-gtk
+    - xdg-desktop-portal-hyprland
+    - zram-generator
+    # Network / bluetooth / audio
+    - bluez
+    - bluez-utils
+    - iw
+    - linux-firmware
+    - networkmanager
+    - wireless-regdb
+    - wpasupplicant
+    # System
+    - dosfstools
+    - e2fsprogs
+    - kexec-tools
+    - kmod
+    - mkinitcpio
+    - openssh
+    - parted
+    # Utilities the default desktop expects
+    - chromium
+    - ffmpeg
+    - git
+    - jq
+    - less
+    - nano
+    - neovim
+    - noto-fonts
+    - noto-fonts-emoji
+    - ripgrep
+    - sudo
+    - tmux
+    - vi
+    action: install
+files:
+- path: /etc/hostname
+  generator: hostname
+- path: /etc/hosts
+  generator: hosts
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+- path: /usr/local/sbin/omarchy-post-install
+  generator: copy
+  source: /tmp/build-staging/post-install.sh
+  mode: "0755"
+- path: /opt/pkgs/
+  generator: copy
+  source: /tmp/build-staging/pkgs
+- path: /omarchy-pkgs/
+  generator: copy
+  source: /omarchy-pkgs
+- path: /omarchy-db/
+  generator: copy
+  source: /omarchy-db
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    # Pacman 7 Landlock sandbox is unsupported under QEMU; disable it.
+    sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+    pacman-key --init
+    pacman-key --populate archlinux
+    pacman -Syy --noconfirm
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    # fc-cache / systemctl can SIGSEGV under QEMU when the image platform is
+    # linux/amd64 on an arm64 host.
+    fc-cache -f 2>/dev/null || true
+    symlink_wants() {
+      local src=$1
+      local target=$2
+      [ -e "$src" ] || return 0
+      mkdir -p "/etc/systemd/system/${target}.wants"
+      ln -sf "$src" "/etc/systemd/system/${target}.wants/$(basename "$src")"
+    }
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    symlink_wants /usr/lib/systemd/system/sshd.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/NetworkManager.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/seatd.service multi-user.target
+    for s in pipewire pipewire-pulse wireplumber; do
+      symlink_wants "/usr/lib/systemd/system/${s}.service" default.target || true
+    done
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    # Default user (ps5/ps5) before Omarchy's setup runs — its installer
+    # expects the target user to exist.
+    useradd -m -G wheel,seat,video,audio,input -s /bin/bash ps5
+    echo "ps5:ps5" | chpasswd
+    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+    # No display manager: tty1 autologin starts the session, same as the
+    # Arch/CachyOS/SteamOS images. Mask SDDM in case a pulled-in package
+    # depends on it.
+    ln -sf /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target
+    ln -sf /dev/null /etc/systemd/system/sddm.service
+    ln -sf /dev/null /etc/systemd/systemd-firstboot.service
+    mkdir -p /etc/systemd/system/getty@tty1.service.d
+    printf '%s\n' '[Service]' \
+        'ExecStart=' \
+        'ExecStart=-/sbin/agetty --autologin ps5 --noclear %I $TERM' \
+        > /etc/systemd/system/getty@tty1.service.d/autologin.conf
+    # Launch the Hyprland session directly; Omarchy's configs/packages come
+    # from /etc/skel + omarchy-finalize-user, so no uwsm/greetd wrapper is
+    # needed (and greetd has no VT handoff path on the PS5).
+    {
+        echo 'if [ "$(tty)" = "/dev/tty1" ] && [ -z "$WAYLAND_DISPLAY" ]; then'
+        echo '    export XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"'
+        echo '    mkdir -p "$XDG_RUNTIME_DIR"'
+        echo '    chmod 700 "$XDG_RUNTIME_DIR"'
+        echo '    exec Hyprland'
+        echo 'fi'
+    } >> /home/ps5/.bash_profile
+    chown ps5:ps5 /home/ps5/.bash_profile
+    # Ensure vconsole.conf exists (needed by mkinitcpio sd-vconsole hook)
+    [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
+    # Drop autodetect — it detects the build host's hardware, not the target.
+    # This produces a larger but hardware-independent initramfs.
+    sed -i 's/ autodetect//' /etc/mkinitcpio.conf
+    # Install custom kernel packages
+    if ls /opt/pkgs/*.pkg.tar.zst 1>/dev/null 2>&1; then
+        pacman -U --noconfirm --ask 4 /opt/pkgs/*.pkg.tar.zst
+        rm -rf /opt/pkgs
+        KVER=$(ls -1t /lib/modules | head -1)
+        mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
+    fi
+    mkdir -p /boot/efi
+    /etc/kernel/postinst.d/zz-update-boot
+    # Omarchy packages + system setup (see distros/omarchy/post-install.sh).
+    # Runs last: Omarchy's own leaves set services and PAM state that the
+    # steps above would otherwise overwrite.
+    export DISTRO OMARCHY_PATH=/usr/share/omarchy
+    . /usr/local/sbin/omarchy-post-install
+    rm -f /usr/local/sbin/omarchy-post-install
+mappings:
+  architecture_map: archlinux
