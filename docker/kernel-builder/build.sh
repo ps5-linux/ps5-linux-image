@@ -160,4 +160,164 @@ UNIT
 ln -sf ../ps5-bt-quiet.service \
     /out/staging/etc/systemd/system/multi-user.target.wants/ps5-bt-quiet.service
 
+cat > /out/staging/usr/local/sbin/ps5-stage-gpu-firmware <<'HELPER'
+#!/bin/sh
+# Stages the PS5 Pro (Viola) GPU firmware that ps5-linux-loader dumps to the
+# boot partition. If all of it is there, it is copied to /usr/lib/firmware/amdgpu.
+# If amdgpu loads from the initramfs, that is rebuilt and deployed with
+# zz-update-boot. amdgpu uses the firmware from the next boot on.
+set -eu
+
+BOOT=/boot/efi
+SRC=$BOOT/lib/firmware/amdgpu
+DST=/usr/lib/firmware/amdgpu
+STAMP=/var/lib/ps5-stage-gpu-firmware/deployed
+HOOK=/etc/kernel/postinst.d/zz-update-boot
+NAMES="viola_ce.bin viola_me.bin viola_mec.bin viola_mec2.bin viola_pfp.bin viola_rlc.bin viola_sdma.bin viola_sdma1.bin"
+KVER=$(uname -r)
+INITRD=/boot/initrd.img-$KVER
+
+log() { echo "ps5-stage-gpu-firmware: $*"; }
+
+# PS5 Pro only: its GPU is 1002:13da.
+pro=
+for d in /sys/bus/pci/devices/*; do
+    case "$(cat "$d/vendor" "$d/device" 2>/dev/null | tr '\n' :)" in
+        0x1002:0x13da:) pro=1 ;;
+    esac
+done
+if [ -z "$pro" ]; then
+    log "not a PS5 Pro, not staging"
+    exit 0
+fi
+
+# Only on images that deploy the kernel with zz-update-boot. bazzite,
+# batocera and steamos build their initrd differently.
+if [ ! -x "$HOOK" ]; then
+    log "no $HOOK, not staging"
+    exit 0
+fi
+
+missing=
+for n in $NAMES; do
+    [ -s "$SRC/$n" ] || missing="$missing $n"
+done
+if [ -n "$missing" ]; then
+    log "not in $SRC:$missing, not staging"
+    exit 0
+fi
+
+if ! modinfo -k "$KVER" -F firmware amdgpu 2>/dev/null | grep -qx 'amdgpu/viola_ce.bin'; then
+    log "amdgpu of $KVER does not load Viola firmware, not staging"
+    exit 0
+fi
+
+# What the last successful run deployed: kernel and firmware checksums.
+state="$KVER $(cd "$SRC" && sha256sum $NAMES | sha256sum | cut -d' ' -f1)"
+
+copied=1
+for n in $NAMES; do
+    cmp -s "$SRC/$n" "$DST/$n" || copied=
+done
+if [ -n "$copied" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$state" ]; then
+    log "Viola firmware is already staged for $KVER"
+    exit 0
+fi
+
+# All or nothing: copy to temporary names first, then rename.
+if [ -z "$copied" ]; then
+    mkdir -p "$DST"
+    trap 'for n in $NAMES; do rm -f "$DST/.$n.new"; done' EXIT
+    for n in $NAMES; do
+        install -m644 "$SRC/$n" "$DST/.$n.new"
+    done
+    for n in $NAMES; do
+        mv -f "$DST/.$n.new" "$DST/$n"
+    done
+    trap - EXIT
+    log "copied Viola firmware from $SRC to $DST"
+fi
+
+if command -v update-initramfs >/dev/null 2>&1; then
+    list=lsinitramfs
+elif command -v mkinitcpio >/dev/null 2>&1; then
+    list=lsinitcpio
+elif command -v dracut >/dev/null 2>&1; then
+    list=lsinitrd
+else
+    log "no update-initramfs, mkinitcpio or dracut"
+    exit 1
+fi
+
+viola_in_initrd() {
+    "$list" "$INITRD" 2>/dev/null | grep -o 'firmware/amdgpu/viola_[a-z0-9]*\.bin' | sort -u | wc -l
+}
+
+# amdgpu loaded from the root filesystem finds the firmware in $DST.
+if [ -f "$INITRD" ] && ! "$list" "$INITRD" 2>/dev/null | grep -q '/amdgpu\.ko'; then
+    log "amdgpu is not in $INITRD, nothing to rebuild"
+    mkdir -p "${STAMP%/*}"
+    echo "$state" > "$STAMP"
+    exit 0
+fi
+
+# Rebuild if the firmware was just copied or the initramfs lacks some of it.
+if [ -z "$copied" ] || [ ! -f "$INITRD" ] || [ "$(viola_in_initrd)" -ne 8 ]; then
+    log "rebuilding $INITRD"
+    case $list in
+        lsinitramfs)
+            if [ -e "$INITRD" ]; then
+                update-initramfs -u -k "$KVER"
+            else
+                update-initramfs -c -k "$KVER"
+            fi
+            ;;
+        # mkinitcpio may warn about missing optional modules; the check below decides
+        lsinitcpio) mkinitcpio -k "$KVER" -g "$INITRD" || true ;;
+        lsinitrd) dracut --force --no-hostonly "$INITRD" "$KVER" ;;
+    esac
+
+    # Only deploy an initramfs that really has all of the firmware.
+    have=$(viola_in_initrd)
+    if [ "$have" -ne 8 ]; then
+        log "$INITRD has $have of 8 Viola firmware files, not deploying it"
+        exit 1
+    fi
+fi
+
+# zz-update-boot names the initrd per distro on multi-distro images.
+deployed=
+for f in "$BOOT"/initrd.img "$BOOT"/initrd-*.img; do
+    cmp -s "$INITRD" "$f" && deployed=1
+done
+if [ -z "$deployed" ]; then
+    "$HOOK" "$KVER"
+    sync
+    log "deployed $INITRD to $BOOT, amdgpu uses the Viola firmware from the next boot"
+else
+    log "$INITRD with Viola firmware is already deployed to $BOOT"
+fi
+
+mkdir -p "${STAMP%/*}"
+echo "$state" > "$STAMP"
+HELPER
+chmod +x /out/staging/usr/local/sbin/ps5-stage-gpu-firmware
+
+cat > /out/staging/etc/systemd/system/ps5-stage-gpu-firmware.service <<'UNIT'
+[Unit]
+Description=Stage PS5 Pro (Viola) GPU firmware from EFI partition
+RequiresMountsFor=/boot/efi /usr/lib/firmware /var/lib
+After=local-fs.target
+ConditionPathExists=/boot/efi/lib/firmware/amdgpu
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-stage-gpu-firmware
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+ln -sf ../ps5-stage-gpu-firmware.service \
+    /out/staging/etc/systemd/system/multi-user.target.wants/ps5-stage-gpu-firmware.service
+
 echo "=== Build artifacts staged in /out/staging ==="
