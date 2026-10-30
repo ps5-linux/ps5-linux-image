@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck, steamos]
+        options: [all, ubuntu2604, arch, cachyos, fedora, proxmox, debian, debian13, bazzite, bazzite-deck, steamos]
   workflow_call:
     inputs:
       distro:
@@ -34,7 +34,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","arch","cachyos","fedora","proxmox","debian","bazzite","bazzite-deck","steamos"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","arch","cachyos","fedora","proxmox","debian","debian13","bazzite","bazzite-deck","steamos"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -186,6 +186,7 @@ jobs:
               { key: 'fedora',       label: 'Fedora 44',            file: 'ps5-fedora.img.xz' },
               { key: 'proxmox',      label: 'Proxmox VE 8',         file: 'ps5-proxmox.img.xz' },
               { key: 'debian',       label: 'Debian 12',            file: 'ps5-debian.img.xz' },
+              { key: 'debian13',     label: 'Debian 13',            file: 'ps5-debian13.img.xz' },
               { key: 'bazzite',      label: 'Bazzite (KDE gaming)', file: 'ps5-bazzite.img.xz' },
               { key: 'bazzite-deck', label: 'Bazzite Deck UI',      file: 'ps5-bazzite-deck.img.xz' },
               { key: 'steamos',      label: 'SteamOS 3 (Holo)',     file: 'ps5-steamos.img.xz' },
