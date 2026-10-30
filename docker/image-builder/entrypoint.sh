@@ -27,10 +27,11 @@ export KVER
 if [ "$SKIP_CHROOT" = "true" ] && [ -d "$CHROOT/bin" ]; then
     echo "=== Reusing cached $DISTRO rootfs ==="
 elif [ -x "/repo/distros/${DISTRO}/build-rootfs.sh" ]; then
-    # Distros with their own build-rootfs.sh (bazzite, bazzite-deck, batocera, ...)
-    # are responsible for populating $CHROOT themselves — distrobuilder is
-    # bypassed entirely. Most often used for OCI atomic images (bazzite via
-    # skopeo+umoci) or pre-built rootfs images (batocera squashfs).
+    # Distros with their own build-rootfs.sh (bazzite, bazzite-deck, batocera,
+    # omarchy, ...) drive the rootfs build themselves instead of the shared
+    # distrobuilder call below. Most often used for OCI atomic images (bazzite
+    # via skopeo+umoci), pre-built rootfs images (batocera squashfs) or a
+    # distrobuilder run with extra package sources (omarchy).
     echo "=== Building $DISTRO rootfs via distros/${DISTRO}/build-rootfs.sh ==="
     [ -n "$CHROOT" ] || { echo "FATAL: \$CHROOT empty"; exit 1; }
     mkdir -p "$CHROOT"
