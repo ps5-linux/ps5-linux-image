@@ -1,0 +1,341 @@
+image:
+  name: ps5-debian
+  distribution: debian
+  release: trixie
+  description: Debian 13 Gnome desktop for PS5
+  architecture: x86_64
+
+source:
+  downloader: debootstrap
+  url: http://deb.debian.org/debian
+  variant: minbase
+  keyserver: keyserver.ubuntu.com
+
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+
+  repositories:
+  - name: sources.list
+    url: |-
+      deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
+      deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
+      deb http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+      deb http://deb.debian.org/debian trixie-backports main contrib non-free non-free-firmware
+    architectures:
+    - amd64
+
+  sets:
+  - packages:
+    # XFCE desktop (proven on PS5 via the Kali image)
+    - task-gnome-desktop
+    - gdm3
+    - xserver-xorg
+    - xserver-xorg-video-amdgpu
+    - dbus-x11
+    - x11-xserver-utils
+
+    # Bluetooth
+    - bluetooth
+    - bluez
+    - bluez-tools
+
+    # Audio / media
+    - pipewire
+    - pipewire-pulse
+    - wireplumber
+    - pavucontrol
+
+    # GPU
+    - mesa-vulkan-drivers
+    - mesa-va-drivers
+
+    # Networking
+    - network-manager
+    - network-manager-gnome
+    - openssh-server
+    - iputils-ping
+    - iw
+    - wpasupplicant
+    - wireless-regdb
+    - rfkill
+
+    # Firmware + PS5 boot support
+    - firmware-linux
+    - firmware-linux-nonfree
+    - firmware-amd-graphics
+    - firmware-realtek
+    - firmware-atheros
+    - firmware-misc-nonfree
+    - initramfs-tools
+    - kexec-tools
+    - kmod
+    - busybox
+    - zstd
+    - systemd-zram-generator
+
+    # Apps
+    - firefox-esr
+    - file-roller
+    - synaptic
+    - gnome-disk-utility
+    - htop
+
+    # Base utilities
+    - sudo
+    - cloud-guest-utils
+    - parted
+    - e2fsprogs
+    - usbutils
+    - pciutils
+    - util-linux
+    - curl
+    - wget
+    - git
+    - ca-certificates
+    - vim
+    - nano
+    - tmux
+    - ethtool
+
+    # Build tools (for WiFi module — prebuilt, but keep headers usable)
+    - build-essential
+    - bc
+    - bison
+    - flex
+    - libssl-dev
+    - libelf-dev
+
+    # Fonts
+    - fonts-dejavu
+    - fonts-liberation2
+    - fonts-noto
+    - fontconfig
+
+    # Python environment & packaging
+    - python-apt-common
+    - python3-apt
+    - python3-venv
+    - distro-info-data
+
+    # Gaming & Flatpak support
+    - flatpak 
+    - gnome-software-plugin-flatpak
+    - steam-installer
+    - steam-devices
+
+    # Graphics drivers & Vulkan/OpenGL runtime (Backports + 32-bit multilib)
+    - mesa-vulkan-drivers/trixie-backports
+    - libgl1-mesa-dri/trixie-backports
+    - libgl1-mesa-dri:i386/trixie-backports
+    - libegl-mesa0/trixie-backports
+    - libegl-mesa0:i386/trixie-backports
+    - libgbm1/trixie-backports
+    - libgbm1:i386/trixie-backports
+    - mesa-libgallium/trixie-backports
+    - mesa-libgallium:i386/trixie-backports
+    - libglx-mesa0/trixie-backports
+    - libglx-mesa0:i386/trixie-backports
+    - mesa-va-drivers/trixie-backports
+    - mesa-drm-shim/trixie-backports
+    - mesa-utils
+    - vulkan-tools
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/machine-id
+  generator: dump
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+- path: /opt/debs/
+  generator: copy
+  source: /tmp/build-staging/debs
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    dpkg --add-architecture i386
+    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry
+    apt-get update
+
+- trigger: post-update
+  action: |-
+    #!/bin/bash
+    set -eux
+    passwd -l root
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Default user (ps5/ps5)
+    useradd -m -G sudo,video,input,render -s /bin/bash ps5
+    echo "ps5:ps5" | chpasswd
+
+    printf 'ps5\n' > /etc/hostname
+    if grep -q '^127\.0\.1\.1' /etc/hosts; then
+      sed -i 's/^127\.0\.1\.1.*/127.0.1.1 ps5/' /etc/hosts
+    else
+      printf '127.0.1.1 ps5\n' >> /etc/hosts
+    fi
+
+    sed -i '/^\[daemon\]/a AutomaticLoginEnable=true\nAutomaticLogin=ps5' \
+      /etc/gdm3/daemon.conf
+
+    # SSH off by default (public default credentials)
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl disable ssh.service || true
+    systemctl disable ssh.socket || true
+
+    systemctl set-default graphical.target
+    systemctl enable NetworkManager
+    systemctl enable gdm3
+    systemctl enable bluetooth.service
+
+    # Disable USB autosuspend for PS5 Bluetooth (Marvell/NXP IW620: 1286:2059) and generic btusb
+    mkdir -p /etc/modprobe.d
+    echo 'options btusb enable_autosuspend=0' > /etc/modprobe.d/btusb.conf
+
+    mkdir -p /etc/udev/rules.d
+    cat > /etc/udev/rules.d/50-ps5-bluetooth-power.rules <<'EOF'
+
+    # Disable autosuspend/power saving on PS5 Bluetooth (IW620)
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1286", ATTR{idProduct}=="2059", ATTR{power/control}="on", ATTR{power/autosuspend}="-1"
+    ACTION=="add", SUBSYSTEM=="bluetooth", ATTR{power/control}="on"
+    EOF
+
+    ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
+    printf 'Etc/UTC\n' > /etc/timezone
+
+    # zram swap
+    printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
+
+    # Disable screen blanking for demos
+    install -d -m 0755 /home/ps5/.config/autostart
+    cat > /home/ps5/.config/autostart/ps5-display.desktop <<'EOF'
+    [Desktop Entry]
+    Type=Application
+    Name=PS5 Display Defaults
+    Exec=sh -c 'xset s off -dpms; xset s noblank'
+    X-GNOME-Autostart-enabled=true
+    EOF
+    chown -R ps5:ps5 /home/ps5
+
+    python3 -m venv /tmp/venv
+    source /tmp/venv/bin/activate
+    pip install gnome-extensions-cli
+    su - ps5 -c '/tmp/venv/bin/gnome-extensions-cli install no-overview@fthx'
+    su - ps5 -c '/tmp/venv/bin/gnome-extensions-cli install hide-cursor@elcste.com'
+    su - ps5 -c '/tmp/venv/bin/gnome-extensions-cli install BringOutSubmenuOfPowerOffLogoutButton@pratap.fastmail.fm'
+    su - ps5 -c '/tmp/venv/bin/gnome-extensions-cli install quick-sound-switcher@dustin-hawkins'
+    rm -Rf /tmp/venv
+
+    mkdir -p /etc/dconf/db/local.d
+
+    cat > /etc/dconf/db/local.d/00-pref-ps5 <<'EOF'
+    [org/gnome/desktop/interface]
+    color-scheme='prefer-dark'
+
+    [org/gnome/desktop/screensaver]
+    lock-enabled=false
+
+    [org/gnome/desktop/search-providers]
+    sort-order=['org.gnome.Settings.desktop', 'org.gnome.Contacts.desktop', 'org.gnome.Nautilus.desktop']
+
+    [org/gnome/desktop/session]
+    idle-delay=uint32 0
+
+    [org/gnome/desktop/break-reminders/movement]
+    duration-seconds=uint32 300
+    interval-seconds=uint32 1800
+    play-sound=true
+
+    [org/gnome/desktop/wm/keybindings]
+    switch-windows-backward=['<Shift><Super>Tab']
+
+    [org/gnome/nautilus/icon-view]
+    default-zoom-level='small-plus'
+
+    [org/gnome/shell]
+    disable-user-extensions=false
+    enabled-extensions=['no-overview@fthx', 'hide-cursor@elcste.com', 'BringOutSubmenuOfPowerOffLogoutButton@pratap.fastmail.fm', 'quick-sound-switcher@dustin-hawkins']
+    favorite-apps=['firefox-esr.desktop', 'org.gnome.Terminal.desktop', 'org.gnome.Nautilus.desktop']
+
+    [org/gnome/shell/extensions/bring-out-submenu-of-power-off-logout]
+    hide-lock-button=true
+    hide-logout-button=false
+    hide-power-button=false
+    hide-restart-button=true
+    hide-suspend-button=true
+    hide-switch-user-button=true
+    EOF
+
+    cat > /etc/dconf/profile/user <<'EOF'
+    user-db:user
+    system-db:local
+    EOF
+
+    dconf update
+
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    systemctl enable grow-rootfs.service
+    mkdir -p /boot/efi
+
+    mkdir -p /etc/initramfs-tools/conf.d
+    printf 'RESUME=none\n' > /etc/initramfs-tools/conf.d/resume
+
+    # Install the PS5-patched kernel
+    dpkg -i /opt/debs/*.deb
+    rm -rf /opt/debs
+    apt-mark hold linux-ps5 || true
+
+    KVER=$(ls -1t /lib/modules | head -1)
+    depmod -a "$KVER"
+
+    # NOTE: PS5 WiFi (IW620) is not built here. The linux-ps5 headers ship
+    # host tools prebuilt on Ubuntu (needs glibc 2.38+) which Debian 12's
+    # glibc 2.36 can't run. WiFi modules will be added as prebuilt artifacts
+    # in a future update. Use ethernet or a USB WiFi dongle for now.
+
+    # Front-load amdgpu for PS5 display
+    grep -qxF amdgpu /etc/initramfs-tools/modules || printf '\namdgpu\n' >> /etc/initramfs-tools/modules
+    printf 'MODULES=most\nBUSYBOX=y\n' > /etc/initramfs-tools/conf.d/ps5-amdgpu
+    update-initramfs -c -k "$KVER"
+    /etc/kernel/postinst.d/zz-update-boot "$KVER"
+
+mappings:
+  architecture_map: debian
