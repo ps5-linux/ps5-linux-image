@@ -165,7 +165,8 @@ cat > /out/staging/usr/local/sbin/ps5-stage-gpu-firmware <<'HELPER'
 # Stages the PS5 Pro (Viola) GPU firmware that ps5-linux-loader dumps to the
 # boot partition. If all of it is there, it is copied to /usr/lib/firmware/amdgpu.
 # If amdgpu loads from the initramfs, that is rebuilt and deployed with
-# zz-update-boot. amdgpu uses the firmware from the next boot on.
+# zz-update-boot, or copied to the boot partition on bazzite. amdgpu uses the
+# firmware from the next boot on.
 set -eu
 
 BOOT=/boot/efi
@@ -179,6 +180,11 @@ INITRD=/boot/initrd.img-$KVER
 
 log() { echo "ps5-stage-gpu-firmware: $*"; }
 
+# cmp is not on every image.
+same() {
+    [ -f "$2" ] && [ "$(sha256sum < "$1")" = "$(sha256sum < "$2")" ]
+}
+
 # PS5 Pro only: its GPU is 1002:13da.
 pro=
 for d in /sys/bus/pci/devices/*; do
@@ -191,9 +197,14 @@ if [ -z "$pro" ]; then
     exit 0
 fi
 
-# Only on images that deploy the kernel with zz-update-boot. bazzite,
-# batocera and steamos build their initrd differently.
-if [ ! -x "$HOOK" ]; then
+# How the image deploys the initrd: zz-update-boot, or on bazzite a plain copy
+# to $BOOT/initrd.img like its build and the kernel rpm do. batocera and
+# steamos build their initrd differently.
+if [ -x "$HOOK" ]; then
+    deploy=hook
+elif [ -f /usr/share/ublue-os/image-info.json ] && [ -f "$BOOT/initrd.img" ]; then
+    deploy=copy
+else
     log "no $HOOK, not staging"
     exit 0
 fi
@@ -217,7 +228,7 @@ state="$KVER $(cd "$SRC" && sha256sum $NAMES | sha256sum | cut -d' ' -f1)"
 
 copied=1
 for n in $NAMES; do
-    cmp -s "$SRC/$n" "$DST/$n" || copied=
+    same "$SRC/$n" "$DST/$n" || copied=
 done
 if [ -n "$copied" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$state" ]; then
     log "Viola firmware is already staged for $KVER"
@@ -288,10 +299,20 @@ fi
 # zz-update-boot names the initrd per distro on multi-distro images.
 deployed=
 for f in "$BOOT"/initrd.img "$BOOT"/initrd-*.img; do
-    cmp -s "$INITRD" "$f" && deployed=1
+    same "$INITRD" "$f" && deployed=1
 done
 if [ -z "$deployed" ]; then
-    "$HOOK" "$KVER"
+    if [ "$deploy" = hook ]; then
+        "$HOOK" "$KVER"
+    else
+        mv -f "$BOOT/initrd.img" "$BOOT/initrd.img.old"
+        if ! cp "$INITRD" "$BOOT/initrd.img"; then
+            rm -f "$BOOT/initrd.img"
+            mv -f "$BOOT/initrd.img.old" "$BOOT/initrd.img"
+            log "could not copy $INITRD to $BOOT, kept the old initrd"
+            exit 1
+        fi
+    fi
     sync
     log "deployed $INITRD to $BOOT, amdgpu uses the Viola firmware from the next boot"
 else
