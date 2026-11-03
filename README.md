@@ -134,9 +134,9 @@ sudo dpkg -i linux-bin/linux-ps5_*.deb
 The kernel package installs `ps5-stage-gpu-firmware.service`. It only acts on a PS5 Pro, when ps5-linux-loader has dumped the Viola GPU firmware (`viola_*.bin`) to `/boot/efi/lib/firmware/amdgpu/` and the kernel's amdgpu can load it. Then it:
 
 - copies the files to `/usr/lib/firmware/amdgpu/`
-- rebuilds the initramfs and deploys it to the boot partition with `zz-update-boot`
+- rebuilds the initramfs and deploys it to the boot partition with `zz-update-boot`, or on Bazzite by copying it to `/boot/efi/initrd.img`
 
-amdgpu uses the firmware from the next boot on. The service does nothing on other models, without the firmware, or on Bazzite, Batocera and SteamOS. Check it with `journalctl -u ps5-stage-gpu-firmware`.
+amdgpu uses the firmware from the next boot on. The service does nothing on other models, without the firmware, or on Batocera and SteamOS. Check it with `journalctl -u ps5-stage-gpu-firmware`.
 
 ## Directory Layout
 
