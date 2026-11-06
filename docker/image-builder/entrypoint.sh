@@ -66,7 +66,7 @@ EOF
             cp /repo/distros/${DISTRO}/proxmox-release-bookworm.gpg "$STAGING/"
             cp /kernel-debs/*.deb                           "$STAGING/debs/"
             ;;
-        debian)
+        debian*)
             cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service  "$STAGING/"
             cp /kernel-debs/*.deb                           "$STAGING/debs/"
