@@ -1,6 +1,6 @@
 # PS5 Linux Image Builder
 
-Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), Fedora (GNOME), individually or as a multi-distro image with kexec switching.
+Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), Omarchy (Arch + Hyprland), Fedora (GNOME), individually or as a multi-distro image with kexec switching.
 
 ## Prerequisites
 
@@ -27,6 +27,9 @@ OR
 
 OR
 
+# Build Omarchy (Arch-based, Hyprland desktop)
+./build_image.sh --distro omarchy
+
 OR
 
 # Build Fedora (GNOME desktop)
@@ -50,7 +53,7 @@ sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `fedora`, or `all` | `ubuntu2604` |
+| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `omarchy`, `fedora`, or `all` | `ubuntu2604` |
 | `--kernel` | Path to kernel source directory | auto-clone version selected by PS5 patch set |
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
@@ -98,6 +101,7 @@ All verbose output goes to `build.log`. The terminal shows a spinner with live p
 | Ubuntu 26.04 (Resolute) | GNOME | `.deb` | systemd |
 | Arch | Sway | `.pkg.tar.zst` | systemd |
 | CachyOS | Gamescope + Steam Big Picture (Arch + `[cachyos]` repo, no v3 migration in image build) | `.pkg.tar.zst` | systemd |
+| Omarchy | Hyprland (Arch + the Omarchy packages from `pkgs.omarchy.org`, see `distros/omarchy/README.md`) | `.pkg.tar.zst` | systemd |
 
 ## Multi-distro Image
 
@@ -153,6 +157,7 @@ distros/
   ubuntu2604/                   # Ubuntu 26.04 (Resolute)
   arch/                         # Arch Linux
   cachyos/                      # CachyOS repos + Gamescope/Steam
+  omarchy/                      # Omarchy (Arch + Hyprland) packages + setup
   shared/                       # Kernel postinst hooks (single + multi)
 boot/
   cmdline.txt                   # Kernel cmdline template (__DISTRO__ placeholder)
