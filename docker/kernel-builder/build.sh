@@ -108,6 +108,7 @@ chmod +x /out/staging/usr/local/sbin/ps5-stage-firmware
 
 cat > /out/staging/etc/systemd/system/ps5-stage-firmware.service <<'UNIT'
 [Unit]
+DefaultDependencies=no
 Description=Stage PS5 NXP IW620 wifi firmware from EFI partition
 After=local-fs.target
 Before=systemd-modules-load.service network-pre.target
