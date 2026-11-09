@@ -253,7 +253,9 @@ actions:
     [ -z "$FW_SRC" ] && FW_SRC="$(find /boot /boot/efi -path "*/$FW_NAME" -type f 2>/dev/null | head -n 1)"
     [ -n "$FW_SRC" ] && [ -f "$FW_SRC" ] && install -D -m 0644 "$FW_SRC" "$FW_DST"
     [ -f "$FW_DST" ] || { echo "PS5 IW620 firmware not found; skipping"; exit 0; }
-    modprobe -r moal mlan 2>/dev/null || true
+    if [ -d /sys/module/moal ] && [ ! -e /sys/bus/pci/drivers/wlan_pcie/0000:40:00.7 ]; then
+      modprobe -r moal mlan 2>/dev/null || true
+    fi
     modprobe cfg80211 || true
     modprobe moal
     rfkill unblock all 2>/dev/null || true

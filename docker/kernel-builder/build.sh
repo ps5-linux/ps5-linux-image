@@ -55,10 +55,16 @@ git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-cmd-timeout-recover.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-kernel71-compat.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-kernel72-compat.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-kernel73-compat.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-rtnl-bounded-wait.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-he.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-tx-min128.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-tx-priority.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-fresh-fw.patch"
 
 # Build against the kernel source we just built (out-of-tree build needs
 # the in-tree build dir, not just headers; same as install-extmod-build).
-make -C "$NXP_MW" CONFIG_OBJTOOL= KERNELDIR=/src ARCH=x86 -j"$(nproc)"
+make -C "$NXP_MW" KERNELDIR=/src ARCH=x86 -j"$(nproc)"
 [ -f "$NXP_MW/mlan.ko" ] && [ -f "$NXP_MW/moal.ko" ] \
     || { echo "ERROR: mwifiex build did not produce mlan.ko/moal.ko"; exit 1; }
 
@@ -73,7 +79,7 @@ echo moal > /out/staging/etc/modules-load.d/moal
 cat > /out/staging/etc/modprobe.d/moal.conf <<'MPCONF'
 # PS5 IW620 mwifiex (NXP moal/mlan, built out-of-tree by kernel-builder).
 softdep moal pre: cfg80211 mlan
-options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=1 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
+options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=2 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
 MPCONF
 
 # Rebuild module index so modprobe moal works without depmod -a post-install.
@@ -101,7 +107,9 @@ DST=$DST_DIR/$FW
         break
     fi
 done
-modprobe -r moal mlan 2>/dev/null || true
+if [ -d /sys/module/moal ] && [ ! -e /sys/bus/pci/drivers/wlan_pcie/0000:40:00.7 ]; then
+    modprobe -r moal mlan 2>/dev/null || true
+fi
 modprobe moal 2>/dev/null || true
 HELPER
 chmod +x /out/staging/usr/local/sbin/ps5-stage-firmware
@@ -341,5 +349,13 @@ WantedBy=multi-user.target
 UNIT
 ln -sf ../ps5-stage-gpu-firmware.service \
     /out/staging/etc/systemd/system/multi-user.target.wants/ps5-stage-gpu-firmware.service
+
+if [ -f /ps5-linux-patches/bluetooth/install.py ]; then
+    python3 -B /ps5-linux-patches/bluetooth/install.py --boot-dir /boot/efi \
+        --init systemd --destdir /out/staging
+    mkdir -p /out/staging/etc/systemd/system/bluetooth.service.wants
+    ln -sf ../ps5-bt-sync.service \
+        /out/staging/etc/systemd/system/bluetooth.service.wants/ps5-bt-sync.service
+fi
 
 echo "=== Build artifacts staged in /out/staging ==="
