@@ -80,6 +80,8 @@ cat > /out/staging/etc/modprobe.d/moal.conf <<'MPCONF'
 # PS5 IW620 mwifiex (NXP moal/mlan, built out-of-tree by kernel-builder).
 softdep moal pre: cfg80211 mlan
 options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=2 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
+# Follow the AP country. The moal defaults ignore it.
+options moal country_ie_ignore=0 beacon_hints=0
 MPCONF
 
 # Rebuild module index so modprobe moal works without depmod -a post-install.

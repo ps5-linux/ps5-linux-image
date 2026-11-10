@@ -59,6 +59,7 @@ packages:
     # Networking
     - networkmanager
     - linux-firmware
+    - wireless-regdb
 
     # System
     - base
@@ -74,6 +75,7 @@ packages:
     - dbus
     - seatd
     - kexec-tools
+    - zram-generator
 
     # Fonts
     - ttf-dejavu
@@ -171,6 +173,9 @@ actions:
       /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
 
     systemctl enable bluetooth.service
+
+    # zram swap: half of RAM, zstd compressed
+    printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
 
     # Create default user (ps5/ps5)
     useradd -m -G wheel,seat -s /bin/bash ps5
