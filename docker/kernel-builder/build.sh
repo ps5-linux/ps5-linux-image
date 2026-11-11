@@ -61,6 +61,7 @@ git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-he.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-tx-min128.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-tx-priority.patch"
 git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-fresh-fw.patch"
+git -C "$NXP_MW" apply "$PS5_MW/ps5-iw620-no-tdls.patch"
 
 # Build against the kernel source we just built (out-of-tree build needs
 # the in-tree build dir, not just headers; same as install-extmod-build).
