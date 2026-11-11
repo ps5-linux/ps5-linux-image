@@ -355,9 +355,34 @@ if [ "$KERNEL_ONLY" = true ]; then
 fi
 
 # --- Step 2: Build distribution image ---
-run_stage "Build image builder image" \
-    docker build --pull --no-cache \
-        -t ps5-image-builder -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR"
+# Rebuild when the builder inputs change, and weekly; parallel jobs reuse it.
+BUILDER_KEY=$(cat "$SCRIPT_DIR"/docker/image-builder/* | sha256sum | cut -c1-12)
+BUILDER_IMAGE="ps5-image-builder:${BUILDER_KEY}-$(date -u +%G%V)"
+
+build_builder_image() {
+    local lock="${TMPDIR:-/tmp}/ps5-image-builder.lock" rc=0
+    exec 9>"$lock"
+    if command -v flock >/dev/null 2>&1; then
+        flock 9
+    fi
+    if docker image inspect "$BUILDER_IMAGE" >/dev/null 2>&1; then
+        echo "Reusing $BUILDER_IMAGE"
+    else
+        DOCKER_BUILDKIT=1 docker build --pull -t "$BUILDER_IMAGE" \
+            -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR" || rc=$?
+    fi
+    if [ "$rc" -eq 0 ]; then
+        docker tag "$BUILDER_IMAGE" ps5-image-builder:latest
+        # Remove older builder images.
+        docker image ls ps5-image-builder --format '{{.Repository}}:{{.Tag}}' |
+            grep -vxF -e "$BUILDER_IMAGE" -e ps5-image-builder:latest |
+            xargs -r docker image rm >/dev/null 2>&1 || true
+    fi
+    exec 9>&-
+    return "$rc"
+}
+
+run_stage "Build image builder image" build_builder_image
 
 if [ "$DISTRO" = "all" ]; then
     DOCKER_ARGS=(
@@ -374,7 +399,7 @@ if [ "$DISTRO" = "all" ]; then
     for d in $MULTI_DISTROS; do
         DOCKER_ARGS+=(-v "$SCRIPT_DIR/work/chroot-$d:/build/chroot-$d")
     done
-    DOCKER_ARGS+=(ps5-image-builder)
+    DOCKER_ARGS+=("$BUILDER_IMAGE")
 
     run_stage "Build multi-distro image (${IMG_SIZE}MB)" "${DOCKER_ARGS[@]}"
 
@@ -390,7 +415,7 @@ else
             -e DISTRO="$DISTRO" \
             -e IMG_SIZE="$IMG_SIZE" \
             -e SKIP_CHROOT="$SKIP_CHROOT" \
-            ps5-image-builder
+            "$BUILDER_IMAGE"
 
     IMG_PATH="$OUTPUT_DIR/ps5-${DISTRO}.img"
 fi

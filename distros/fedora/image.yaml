@@ -223,7 +223,8 @@ actions:
     # amdgpu is NOT forced into the initramfs — it loads late via udev, exactly
     # like the working Arch/Ubuntu images.
     mkdir -p /boot/efi
-    rpm -ivh /opt/rpms/*.rpm
+    # The kernel rpm is unsigned.
+    rpm -ivh --nosignature /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
     [ -f "/boot/efi/bzImage" ] && [ -f "/boot/efi/initrd.img" ]
