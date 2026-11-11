@@ -43,6 +43,10 @@ jobs:
     needs: matrix
     runs-on: self-hosted
     timeout-minutes: 720
+    # Don't build the same distro in two runs at once.
+    concurrency:
+      group: ps5-image-${{ matrix.distro }}
+      cancel-in-progress: false
     permissions:
       contents: write
 
@@ -147,6 +151,9 @@ jobs:
   release:
     needs: build
     runs-on: self-hosted
+    concurrency:
+      group: ps5-image-release
+      cancel-in-progress: false
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     permissions:
       contents: write

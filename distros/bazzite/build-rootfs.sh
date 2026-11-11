@@ -123,7 +123,8 @@ mkdir -m 0700 /root
     # Bazzite's kernel-headers; see fedora image.yaml comment).
     # Bazzite ships kernel modules as a dir; our rpm wants a symlink.
     rm -rf /lib/modules/*
-    rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
+    # The kernel rpm is unsigned.
+    rpm -Uvh --nosignature --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
     rm -rf /var/cache/ps5-rpms
 
     # cyan_skillfish (PS5 Oberon) GPU firmware MUST land in the
