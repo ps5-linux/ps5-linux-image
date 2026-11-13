@@ -368,7 +368,7 @@ build_builder_image() {
     if docker image inspect "$BUILDER_IMAGE" >/dev/null 2>&1; then
         echo "Reusing $BUILDER_IMAGE"
     else
-        DOCKER_BUILDKIT=1 docker build --pull -t "$BUILDER_IMAGE" \
+        docker build --pull -t "$BUILDER_IMAGE" \
             -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR" || rc=$?
     fi
     if [ "$rc" -eq 0 ]; then
