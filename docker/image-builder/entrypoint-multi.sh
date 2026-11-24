@@ -4,6 +4,7 @@
 set -ex
 
 IMG_SIZE="${IMG_SIZE:-32000}"
+BOOT_PART_SIZE="${BOOT_PART_SIZE:-500}"
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
 DISTROS="${DISTROS:-ubuntu2604 arch cachyos}"
 STAGING="/tmp/build-staging"
@@ -92,7 +93,7 @@ echo "=== Creating ${IMG_SIZE}MB GPT image ==="
 TMPIMG="/build/ps5-multi.img"
 dd if=/dev/zero of="$TMPIMG" bs=1M count=$IMG_SIZE conv=fsync status=progress
 
-BOOT_END=500  # MiB
+BOOT_END=${BOOT_PART_SIZE}  # MiB
 USABLE=$((IMG_SIZE - BOOT_END))
 PER_DISTRO=$((USABLE / NUM_DISTROS))
 

@@ -35,10 +35,20 @@ cp -a %{stagedir}/. %{buildroot}/
 %config(noreplace) /etc/modules-load.d/moal
 /etc/systemd/system/ps5-stage-firmware.service
 /etc/systemd/system/ps5-bt-quiet.service
+/etc/systemd/system/ps5-stage-gpu-firmware.service
 /etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
 /etc/systemd/system/multi-user.target.wants/ps5-bt-quiet.service
+/etc/systemd/system/multi-user.target.wants/ps5-stage-gpu-firmware.service
 /usr/local/sbin/ps5-stage-firmware
 /usr/local/sbin/ps5-bt-quiet
+/usr/local/sbin/ps5-stage-gpu-firmware
+%if %(test -f %{stagedir}/usr/local/libexec/ps5-bt-sync && echo 1 || echo 0)
+%config(noreplace) /etc/ps5-bt-sync.conf
+/etc/systemd/system/ps5-bt-sync.service
+/etc/systemd/system/ps5-bt-sync.service.d/paths.conf
+/etc/systemd/system/bluetooth.service.wants/ps5-bt-sync.service
+/usr/local/libexec/ps5-bt-sync
+%endif
 
 %post
 echo ">> linux-ps5 post-install: kernel %{kver}"

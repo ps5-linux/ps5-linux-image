@@ -53,6 +53,11 @@ cp /repo/distros/bazzite/grow-rootfs       "$CHROOT/var/usrlocal/sbin/grow-rootf
 chmod +x "$CHROOT/var/usrlocal/sbin/grow-rootfs"
 cp /repo/distros/bazzite/grow-rootfs.service "$CHROOT/etc/systemd/system/grow-rootfs.service"
 
+# Mount the boot partition at /boot/efi. The linux-ps5 rpm deploys the kernel
+# there, and ps5-stage-gpu-firmware reads the PS5 Pro GPU firmware from it.
+grep -qs '[[:space:]]/boot/efi[[:space:]]' "$CHROOT/etc/fstab" || \
+    echo "LABEL=$EFI_LABEL /boot/efi vfat defaults,nofail 0 2" >> "$CHROOT/etc/fstab"
+
 # Force NetworkManager wifi backend off iwd back to wpa_supplicant. Bazzite
 # defaults to iwd; iwd is incompatible with the PS5 NXP IW620 mwifiex driver
 # (no SSIDs scanned, NM hangs). wpa_supplicant works out of the box.
@@ -118,7 +123,8 @@ mkdir -m 0700 /root
     # Bazzite's kernel-headers; see fedora image.yaml comment).
     # Bazzite ships kernel modules as a dir; our rpm wants a symlink.
     rm -rf /lib/modules/*
-    rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
+    # The kernel rpm is unsigned.
+    rpm -Uvh --nosignature --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
     rm -rf /var/cache/ps5-rpms
 
     # cyan_skillfish (PS5 Oberon) GPU firmware MUST land in the

@@ -64,6 +64,7 @@ packages:
     - firmware-linux
     - firmware-linux-nonfree
     - firmware-amd-graphics
+    - wireless-regdb
     - initramfs-tools
     - kexec-tools
     - kmod

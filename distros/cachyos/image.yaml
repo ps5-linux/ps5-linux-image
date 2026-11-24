@@ -63,6 +63,7 @@ packages:
     # Networking
     - networkmanager
     - linux-firmware
+    - wireless-regdb
     # GIO module libgiognutls.so (KDE/Konsole, GVfs, etc.): needs gnutls → nettle (libhogweed).
     # Explicit install avoids a sparse dependency tree under distrobuilder cleanup: true.
     - gnutls
@@ -83,6 +84,7 @@ packages:
     - polkit
     - dbus
     - kexec-tools
+    - zram-generator
     - curl
     - dialog
 
@@ -235,6 +237,9 @@ actions:
       /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
 
     systemctl enable bluetooth.service
+
+    # zram swap: half of RAM, zstd compressed
+    printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
 
     # Stub out steamos-update so Steam's -steamos3 OOBE skips the SteamOS OTA
     # step cleanly. Exit 7 = "no update available" per Valve's convention.

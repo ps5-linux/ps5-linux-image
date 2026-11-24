@@ -8,22 +8,24 @@ DISTRO="ubuntu2604"
 KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
+BOOT_PART_SIZE=500
 KERNEL_ONLY=false
-PATCHES_REF="kernel-7.1.7-56922cf"
+PATCHES_REF="kernel-7.3.3-c8fe83a"
 
 MULTI_DISTROS="ubuntu2604 arch cachyos"
 
 usage() {
-    echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
+    echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--boot-part-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, omarchy, fedora, proxmox, debian, bazzite, bazzite-deck, batocera, all (default: ubuntu2604)"
-    echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
-    echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
-    echo "  --clean      Remove all cached build artifacts and start from scratch"
-    echo "  --clean-only Remove all cached build artifacts and exit"
-    echo "  --kernel-only  Build and package the kernel only, then exit"
-    echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: v1.2)"
+        echo "  --distro         Distribution to build: ubuntu2604, arch, cachyos, omarchy, fedora, proxmox, debian, debian13, bazzite, bazzite-deck, steamos"
+    echo "  --kernel           Path to kernel source directory (default: auto-clone to work/linux/)"
+    echo "  --img-size         Disk image size in MB (default: 12000, 32000 for --distro all)"
+    echo "  --boot-part-size   Boot partition size in MB (default: 500)"
+    echo "  --clean            Remove all cached build artifacts and start from scratch"
+    echo "  --clean-only       Remove all cached build artifacts and exit"
+    echo "  --kernel-only      Build and package the kernel only, then exit"
+    echo "  --patches-ref      Branch, tag, or commit SHA for patches (default: v1.2)"
     exit 1
 }
 
@@ -32,6 +34,7 @@ while [[ $# -gt 0 ]]; do
         --distro)    DISTRO="$2";          shift 2 ;;
         --kernel)    KERNEL_SRC="$2";      shift 2 ;;
         --img-size)  IMG_SIZE="$2";        shift 2 ;;
+        --boot-part-size)  BOOT_PART_SIZE="$2";        shift 2 ;;
         --clean)     CLEAN=true;           shift ;;
         --clean-only) CLEAN=true; CLEAN_EXIT=true; shift ;;
         --kernel-only) KERNEL_ONLY=true;   shift ;;
@@ -149,18 +152,19 @@ echo ""
 echo "PS5 Linux Image Builder"
 echo "======================="
 if [ "$KERNEL_ONLY" = true ]; then
-    echo "  Mode:         kernel only"
-    echo "  Format:       $FORMAT"
+    echo "  Mode:                 kernel only"
+    echo "  Format:               $FORMAT"
 else
-    echo "  Distro:       $DISTRO"
+    echo "  Distro:               $DISTRO"
     [ "$DISTRO" = "all" ] && echo "                ($MULTI_DISTROS)"
-    echo "  Image size:   ${IMG_SIZE}MB"
+    echo "  Image size:           ${IMG_SIZE}MB"
+    echo "  Boot partiton size:   ${BOOT_PART_SIZE}MB"
 fi
 if [ -f "$PATCHES_DIR/.config" ]; then
     LINUX_BRANCH="v$(sed -nE 's/^# Linux\/[^ ]+ ([0-9]+\.[0-9]+(\.[0-9]+)?) .*/\1/p' "$PATCHES_DIR/.config" | head -1)"
-    echo "  Kernel:       $LINUX_BRANCH"
+    echo "  Kernel:               $LINUX_BRANCH"
 else
-    echo "  Kernel:       (will fetch)"
+    echo "  Kernel:               (will fetch)"
 fi
 echo "  Kernel src:   $KERNEL_SRC"
 echo ""
@@ -311,6 +315,7 @@ else
             -v "$KERNEL_SRC":/src \
             -v "$KERNEL_OUT":/out \
             -v "$CCACHE_DIR":/ccache \
+            -v "$PATCHES_DIR":/ps5-linux-patches \
             ps5-kernel-builder
 
     ls "$KERNEL_OUT/staging/lib/modules/" | head -1 > "$KERNEL_OUT/VERSION"
@@ -354,9 +359,34 @@ if [ "$KERNEL_ONLY" = true ]; then
 fi
 
 # --- Step 2: Build distribution image ---
-run_stage "Build image builder image" \
-    docker build --pull --no-cache \
-        -t ps5-image-builder -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR"
+# Rebuild when the builder inputs change, and weekly; parallel jobs reuse it.
+BUILDER_KEY=$(cat "$SCRIPT_DIR"/docker/image-builder/* | sha256sum | cut -c1-12)
+BUILDER_IMAGE="ps5-image-builder:${BUILDER_KEY}-$(date -u +%G%V)"
+
+build_builder_image() {
+    local lock="${TMPDIR:-/tmp}/ps5-image-builder.lock" rc=0
+    exec 9>"$lock"
+    if command -v flock >/dev/null 2>&1; then
+        flock 9
+    fi
+    if docker image inspect "$BUILDER_IMAGE" >/dev/null 2>&1; then
+        echo "Reusing $BUILDER_IMAGE"
+    else
+        docker build --pull -t "$BUILDER_IMAGE" \
+            -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR" || rc=$?
+    fi
+    if [ "$rc" -eq 0 ]; then
+        docker tag "$BUILDER_IMAGE" ps5-image-builder:latest
+        # Remove older builder images.
+        docker image ls ps5-image-builder --format '{{.Repository}}:{{.Tag}}' |
+            grep -vxF -e "$BUILDER_IMAGE" -e ps5-image-builder:latest |
+            xargs -r docker image rm >/dev/null 2>&1 || true
+    fi
+    exec 9>&-
+    return "$rc"
+}
+
+run_stage "Build image builder image" build_builder_image
 
 if [ "$DISTRO" = "all" ]; then
     DOCKER_ARGS=(
@@ -367,19 +397,20 @@ if [ "$DISTRO" = "all" ]; then
         -v "$OUTPUT_DIR":/output
         -v "$CACHE_DIR":/build/cache
         -e IMG_SIZE="$IMG_SIZE"
+        -e BOOT_PART_SIZE="$BOOT_PART_SIZE"
         -e SKIP_CHROOT="$SKIP_CHROOT"
         -e "DISTROS=$MULTI_DISTROS"
     )
     for d in $MULTI_DISTROS; do
         DOCKER_ARGS+=(-v "$SCRIPT_DIR/work/chroot-$d:/build/chroot-$d")
     done
-    DOCKER_ARGS+=(ps5-image-builder)
+    DOCKER_ARGS+=("$BUILDER_IMAGE")
 
     run_stage "Build multi-distro image (${IMG_SIZE}MB)" "${DOCKER_ARGS[@]}"
 
     IMG_PATH="$OUTPUT_DIR/ps5-multi.img"
 else
-    run_stage "Build $DISTRO image (${IMG_SIZE}MB)" \
+    run_stage "Build $DISTRO image (${IMG_SIZE}MB, boot partition ${BOOT_PART_SIZE}MB)" \
         docker run --rm --privileged --name "$DOCKER_NAME" \
             -v "$SCRIPT_DIR":/repo:ro \
             -v "$KERNEL_OUT":/kernel-debs:ro \
@@ -388,8 +419,9 @@ else
             -v "$CACHE_DIR":/build/cache \
             -e DISTRO="$DISTRO" \
             -e IMG_SIZE="$IMG_SIZE" \
+            -e BOOT_PART_SIZE="$BOOT_PART_SIZE" \
             -e SKIP_CHROOT="$SKIP_CHROOT" \
-            ps5-image-builder
+            "$BUILDER_IMAGE"
 
     IMG_PATH="$OUTPUT_DIR/ps5-${DISTRO}.img"
 fi

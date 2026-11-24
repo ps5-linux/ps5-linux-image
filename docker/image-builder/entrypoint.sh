@@ -3,6 +3,7 @@ set -ex
 
 DISTRO="${DISTRO:-ubuntu2604}"
 IMG_SIZE="${IMG_SIZE:-12000}"
+BOOT_PART_SIZE="${BOOT_PART_SIZE:-500}"
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
 STAGING="/tmp/build-staging"
 ROOT_LABEL="${DISTRO}"
@@ -67,7 +68,7 @@ EOF
             cp /repo/distros/${DISTRO}/proxmox-release-bookworm.gpg "$STAGING/"
             cp /kernel-debs/*.deb                           "$STAGING/debs/"
             ;;
-        debian)
+        debian*)
             cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service  "$STAGING/"
             cp /kernel-debs/*.deb                           "$STAGING/debs/"
@@ -131,8 +132,8 @@ truncate -s "${IMG_SIZE}M" "$TMPIMG"
 sync
 
 parted -s "$TMPIMG" mklabel gpt
-parted -s "$TMPIMG" mkpart primary ext4  500MiB 100%
-parted -s "$TMPIMG" mkpart primary fat32 1MiB   500MiB
+parted -s "$TMPIMG" mkpart primary ext4  ${BOOT_PART_SIZE}MiB 100%
+parted -s "$TMPIMG" mkpart primary fat32 1MiB   ${BOOT_PART_SIZE}MiB
 parted -s "$TMPIMG" set 2 esp on
 
 # Ensure the free loop device node exists (udev doesn't run inside containers,

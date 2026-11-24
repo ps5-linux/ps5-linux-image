@@ -8,8 +8,8 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos, omarchy, fedora, proxmox, debian, bazzite, bazzite-deck, steamos]
-  workflow_call:
+                options: [all, ubuntu2604, arch, cachyos, omarchy, fedora, proxmox, debian, debian13, bazzite, bazzite-deck, steamos]
+        ow_call:
     inputs:
       distro:
         type: string
@@ -34,7 +34,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","arch","cachyos","omarchy","fedora","proxmox","debian","bazzite","bazzite-deck","steamos"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","arch","cachyos","omarchy","fedora","proxmox","debian","debian13","bazzite","bazzite-deck","steamos"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -43,6 +43,10 @@ jobs:
     needs: matrix
     runs-on: self-hosted
     timeout-minutes: 720
+    # Don't build the same distro in two runs at once.
+    concurrency:
+      group: ps5-image-${{ matrix.distro }}
+      cancel-in-progress: false
     permissions:
       contents: write
 
@@ -147,6 +151,9 @@ jobs:
   release:
     needs: build
     runs-on: self-hosted
+    concurrency:
+      group: ps5-image-release
+      cancel-in-progress: false
     if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     permissions:
       contents: write
@@ -187,6 +194,7 @@ jobs:
               { key: 'fedora',       label: 'Fedora 44',            file: 'ps5-fedora.img.xz' },
               { key: 'proxmox',      label: 'Proxmox VE 8',         file: 'ps5-proxmox.img.xz' },
               { key: 'debian',       label: 'Debian 12',            file: 'ps5-debian.img.xz' },
+              { key: 'debian13',     label: 'Debian 13',            file: 'ps5-debian13.img.xz' },
               { key: 'bazzite',      label: 'Bazzite (KDE gaming)', file: 'ps5-bazzite.img.xz' },
               { key: 'bazzite-deck', label: 'Bazzite Deck UI',      file: 'ps5-bazzite-deck.img.xz' },
               { key: 'steamos',      label: 'SteamOS 3 (Holo)',     file: 'ps5-steamos.img.xz' },
