@@ -10,7 +10,7 @@ CLEAN=false
 IMG_SIZE=12000
 BOOT_PART_SIZE=500
 KERNEL_ONLY=false
-PATCHES_REF="kernel-7.3.3-c8fe83a"
+PATCHES_REF="kernel-7.3.3-0f615dc"
 
 MULTI_DISTROS="ubuntu2604 arch cachyos"
 
